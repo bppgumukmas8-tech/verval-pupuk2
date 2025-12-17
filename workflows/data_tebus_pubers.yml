@@ -1,0 +1,63 @@
+name: Rekap Penebusan Bulanan Otomatis
+
+on:
+  schedule:
+    # Jam 16:00 UTC = 23:00 WIB
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install gspread
+          pip install google-auth
+          pip install pandas
+          pip install gspread_dataframe
+          pip install google-api-python-client
+          pip install openpyxl
+          pip install PyYAML
+
+      - name: Set environment variables
+        run: |
+          echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
+
+      - name: Run rekap script
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+        run: |
+          echo "🎯 Memulai proses rekap data..."
+          echo "📧 Email pengirim: $SENDER_EMAIL"
+          echo "📁 Lokasi script: verval-pupuk2/scripts/"
+          
+          # Navigasi ke folder scripts
+          cd scripts/
+          
+          # Jalankan script
+          python data_tebus_pubers.py
+          
+          # Kembali ke root directory
+          cd ..
+
+      - name: Upload logs (jika gagal)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: |
+            scripts/data_bulanan/
+          retention-days: 7
