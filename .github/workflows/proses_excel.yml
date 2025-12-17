@@ -37,7 +37,7 @@ jobs:
         
     - name: Upload logs on failure
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # <-- Change v3 to v4
       with:
         name: error-logs
         path: |
