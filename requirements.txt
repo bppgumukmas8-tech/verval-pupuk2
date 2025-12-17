@@ -1,0 +1,10 @@
+numpy==1.24.3
+pandas
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+gspread
+gspread-dataframe>=3.3.0
+openpyxl>=3.0.0
+xlrd>=2.0.0
