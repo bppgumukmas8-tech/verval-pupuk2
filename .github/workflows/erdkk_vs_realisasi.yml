@@ -1,0 +1,50 @@
+name: Analisis ERDKK vs Realisasi Otomatis
+
+on:
+  schedule:
+    # Jam 18:00 UTC = 01:00 WIB (setelah semua script lain)
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-erdkk-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install gspread==6.0.2
+          pip install pandas==2.1.3
+          pip install gspread-dataframe==3.3.1
+          pip install google-api-python-client==2.108.0
+          pip install google-auth-oauthlib==1.1.0
+          pip install openpyxl==3.1.2
+
+      - name: Run ERDKK vs Realisasi analysis script
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+        run: |
+          echo "🔍 Memverifikasi secrets..."
+          echo "📧 Email pengirim: $SENDER_EMAIL"
+          
+          echo "🚀 Menjalankan script analisis ERDKK vs Realisasi..."
+          python scripts/erdkk_vs_realisasi.py
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          echo "🧹 Membersihkan file temporary..."
+          # Script ini menggunakan temporary directory, tidak perlu cleanup manual
+          echo "✅ Script membersihkan sendiri temporary files"
