@@ -22,14 +22,14 @@ SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_EMAIL_PASSWORD")
 RECIPIENT_EMAILS = os.environ.get("RECIPIENT_EMAILS", "")
 
+# Baca service account dari environment variable atau file
+SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+
 # Konversi string emails menjadi list
 if RECIPIENT_EMAILS:
     RECIPIENT_LIST = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
 else:
     RECIPIENT_LIST = []
-
-# Untuk Google Drive, tetap pakai file service_account.json
-SERVICE_ACCOUNT_FILE = "service_account.json"
 
 # ----------------------------------------------------
 # LOGGING UNTUK EMAIL
@@ -46,6 +46,51 @@ def add_log(message, is_error=False):
     if is_error:
         error_messages.append(log_entry)
     print(log_entry)
+
+# ----------------------------------------------------
+# AUTENTIKASI GOOGLE DRIVE (DIMODIFIKASI)
+# ----------------------------------------------------
+
+def initialize_drive():
+    """Inisialisasi Google Drive client"""
+    try:
+        SCOPES = ["https://www.googleapis.com/auth/drive"]
+        
+        if SERVICE_ACCOUNT_JSON:
+            # Gunakan JSON dari environment variable
+            service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+            creds = service_account.Credentials.from_service_account_info(
+                service_account_info, scopes=SCOPES
+            )
+            add_log("✓ Autentikasi dari environment variable")
+        else:
+            # Fallback ke file (untuk local development)
+            SERVICE_ACCOUNT_FILE = "service_account.json"
+            if os.path.exists(SERVICE_ACCOUNT_FILE):
+                creds = service_account.Credentials.from_service_account_file(
+                    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+                )
+                add_log("✓ Autentikasi dari file service_account.json")
+            else:
+                raise ValueError("Tidak ada kredensial Google Drive yang ditemukan")
+        
+        drive = build("drive", "v3", credentials=creds)
+        add_log("✓ Berhasil autentikasi ke Google Drive")
+        return drive
+        
+    except json.JSONDecodeError as e:
+        add_log(f"✗ Format JSON tidak valid: {str(e)}", is_error=True)
+        raise
+    except Exception as e:
+        add_log(f"✗ Gagal autentikasi ke Google Drive: {str(e)}", is_error=True)
+        raise
+
+# Inisialisasi drive di global scope
+try:
+    drive = initialize_drive()
+except Exception as e:
+    drive = None
+    add_log(f"⚠ Warning: {str(e)}", is_error=True)
 
 # ----------------------------------------------------
 # FUNGSI EMAIL NOTIFICATION
@@ -166,16 +211,6 @@ def create_email_body(processed_files, error_messages):
     """
     
     return html
-
-# ----------------------------------------------------
-# AUTENTIKASI GOOGLE DRIVE (TETAP SAMA)
-# ----------------------------------------------------
-
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-creds = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
-)
-drive = build("drive", "v3", credentials=creds)
 
 # ----------------------------------------------------
 # DOWNLOAD FILE DARI DRIVE (KE MEMORY) - TETAP SAMA
@@ -361,6 +396,21 @@ def list_files_in_folder(folder_id):
 # ----------------------------------------------------
 
 def main():
+    # Cek apakah drive berhasil diinisialisasi
+    if drive is None:
+        error_msg = "❌ Gagal menginisialisasi Google Drive. Proses dihentikan."
+        add_log(error_msg, is_error=True)
+        
+        # Kirim email error
+        error_body = f"""
+        <h2>❌ Error Inisialisasi Google Drive</h2>
+        <p>Waktu: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>
+        <p>Error: Gagal mengautentikasi ke Google Drive</p>
+        <p>Harap periksa konfigurasi SERVICE_ACCOUNT_JSON di GitHub Secrets.</p>
+        """
+        send_email_notification("[Verval Pupuk] ERROR - Autentikasi Gagal", error_body)
+        return
+    
     files = list_files_in_folder(FOLDER_ID)
 
     if not files:
