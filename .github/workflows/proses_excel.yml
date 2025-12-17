@@ -1,0 +1,45 @@
+name: Proses Excel Verval Pupuk
+
+on:
+  workflow_dispatch:  # Manual trigger dari GitHub UI
+  schedule:
+    # Jalankan setiap hari Senin-Jumat jam 08:00 WIB (01:00 UTC)
+    - cron: '0 1 * * 1-5'
+
+jobs:
+  process-excel:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas openpyxl google-api-python-client google-auth-httplib2 google-auth-oauthlib
+        
+    - name: Run Excel Processor
+      env:
+        FOLDER_ID: ${{ secrets.FOLDER_ID }}
+        ARCHIVE_FOLDER_ID: ${{ secrets.ARCHIVE_FOLDER_ID }}
+        SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+        RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+      run: |
+        python scripts/proses_excel.py
+        
+    - name: Upload logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: error-logs
+        path: |
+          *.log
+        retention-days: 7
