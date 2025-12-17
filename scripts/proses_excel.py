@@ -245,27 +245,54 @@ def process_excel(drive, file_id, file_name):
         df.columns = new_header
         df.reset_index(drop=True, inplace=True)
 
-        # Cari kolom TGL INPUT
-        possible_cols = ["TGL INPUT", "TGL_INPUT", "TGLINPUT", "tgl input"]
+        # Cari kolom TGL INPUT dengan variasi yang lebih banyak
+        possible_cols = [
+            "TGL INPUT", "TGL_INPUT", "TGLINPUT", "tgl input",
+            "TGL.INPUT", "TGL", "TANGGAL INPUT", "TANGGAL_INPUT",
+            "Tanggal Input", "tanggal input", "TGL  INPUT"
+        ]
+        
         found_col = None
-
+        df.columns = df.columns.astype(str)  # Pastikan semua kolom string
+        
         for col in df.columns:
-            if str(col).strip().replace(" ", "").upper() in [
-                p.replace(" ", "").upper() for p in possible_cols
-            ]:
-                found_col = col
+            col_clean = str(col).strip().replace(" ", "").replace(".", "").replace("_", "").upper()
+            for pattern in possible_cols:
+                pattern_clean = pattern.replace(" ", "").replace(".", "").replace("_", "").upper()
+                if pattern_clean in col_clean or col_clean in pattern_clean:
+                    found_col = col
+                    add_log(f"  ✓ Kolom ditemukan: '{col}' -> 'TGL INPUT'")
+                    break
+            if found_col:
                 break
 
         if not found_col:
-            add_log("⚠ Kolom TGL INPUT tidak ditemukan.", is_error=True)
-            return None
+            # Debug: tampilkan semua kolom yang ada
+            columns_list = ", ".join([f"'{col}'" for col in df.columns[:5]])  # Tampilkan 5 pertama
+            if len(df.columns) > 5:
+                columns_list += f" ... (total: {len(df.columns)} kolom)"
+            add_log(f"⚠ Kolom TGL INPUT tidak ditemukan. Kolom yang ada: {columns_list}")
+            return None  # ⬅️ Return None, bukan False
 
         df.rename(columns={found_col: "TGL INPUT"}, inplace=True)
-        df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
+        
+        # Coba parsing tanggal dengan berbagai format
+        try:
+            df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
+        except:
+            # Fallback: coba format manual
+            try:
+                df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+            except:
+                df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
 
         latest = df["TGL INPUT"].max()
         if pd.isna(latest):
-            add_log("⚠ TGL INPUT kosong.", is_error=True)
+            add_log(f"⚠ TGL INPUT kosong atau format tidak dikenali.")
+            # Coba ambil dari kolom lain yang mungkin berisi tanggal
+            date_columns = [col for col in df.columns if any(word in str(col).lower() for word in ['tgl', 'tanggal', 'date', 'time'])]
+            if date_columns:
+                add_log(f"  ⚠ Coba kolom lain: {date_columns}")
             return None
 
         latest_str = latest.strftime("%d-%m-%Y %H:%M")
@@ -342,20 +369,27 @@ def create_email_body(processed_files, error_messages):
     """Membuat body email dalam format HTML"""
     current_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
     
+    # Hitung statistik
+    total_warnings = len([msg for msg in error_messages if "⚠" in msg])
+    total_errors = len([msg for msg in error_messages if "✗" in msg])
+    
     html = f"""
     <html>
     <head>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            .container {{ max-width: 800px; margin: auto; }}
+            .container {{ max-width: 1000px; margin: auto; }}
             .header {{ background-color: #4CAF50; color: white; padding: 15px; border-radius: 5px; }}
             .success {{ color: #4CAF50; }}
+            .warning {{ color: #FF9800; }}
             .error {{ color: #f44336; }}
             .info {{ color: #2196F3; }}
             table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
             th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
             th {{ background-color: #f2f2f2; }}
-            .log {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+            .log {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 10px 0; font-family: monospace; }}
+            .stats {{ display: flex; justify-content: space-between; margin: 20px 0; }}
+            .stat-box {{ background: #f5f5f5; padding: 15px; border-radius: 5px; flex: 1; margin: 0 10px; text-align: center; }}
         </style>
     </head>
     <body>
@@ -365,11 +399,22 @@ def create_email_body(processed_files, error_messages):
                 <p>Waktu Eksekusi: {current_time}</p>
             </div>
             
-            <div class="summary">
-                <h3>📈 Ringkasan</h3>
-                <p><strong>Total File Diproses:</strong> {len(processed_files)}</p>
-                <p><strong>Total Error:</strong> {len(error_messages)}</p>
-                <p><strong>Status:</strong> {"✅ Berhasil" if len(error_messages) == 0 else "⚠ Ada Error"}</p>
+            <div class="stats">
+                <div class="stat-box">
+                    <h3>✅ Berhasil</h3>
+                    <p style="font-size: 24px; font-weight: bold;">{len(processed_files)}</p>
+                    <p>file</p>
+                </div>
+                <div class="stat-box">
+                    <h3>⚠ Warning</h3>
+                    <p style="font-size: 24px; font-weight: bold; color: #FF9800;">{total_warnings}</p>
+                    <p>perhatian</p>
+                </div>
+                <div class="stat-box">
+                    <h3>❌ Error</h3>
+                    <p style="font-size: 24px; font-weight: bold; color: #f44336;">{total_errors}</p>
+                    <p>error sistem</p>
+                </div>
             </div>
     """
     
@@ -383,36 +428,52 @@ def create_email_body(processed_files, error_messages):
                     <th>File Baru</th>
                     <th>Bulan</th>
                     <th>Tanggal Terakhir</th>
+                    <th>Arsip</th>
                 </tr>
         """
         
         for i, file_info in enumerate(processed_files, 1):
+            archives = ", ".join(file_info['moved_archives']) if file_info['moved_archives'] else "-"
             html += f"""
                 <tr>
                     <td>{i}</td>
                     <td>{file_info['original_name']}</td>
-                    <td>{file_info['new_name']}</td>
+                    <td><strong>{file_info['new_name']}</strong></td>
                     <td>{file_info['month']}</td>
                     <td>{file_info['latest_date']}</td>
+                    <td>{archives}</td>
                 </tr>
             """
         
         html += "</table>"
+    else:
+        html += "<p><em>Tidak ada file yang berhasil diproses.</em></p>"
     
     if error_messages:
         html += """
-            <h3 class="error">⚠ Error yang Terjadi</h3>
+            <h3 class="warning">📝 Log Proses</h3>
             <div class="log">
         """
         
-        for error in error_messages:
-            html += f"<p>{error}</p>"
+        for i, log in enumerate(error_messages, 1):
+            html += f"<p>{i}. {log}</p>"
         
         html += "</div>"
     
-    html += """
+    # Status akhir
+    status_color = "#4CAF50" if processed_files else "#FF9800"
+    status_text = "SUKSES" if processed_files else "TIDAK ADA FILE YANG DIPROSES"
+    
+    html += f"""
+            <div style="margin: 30px 0; padding: 15px; background-color: {status_color}; color: white; border-radius: 5px; text-align: center;">
+                <h3>STATUS AKHIR: {status_text}</h3>
+                <p>Workflow akan dianggap sukses selama tidak ada error sistem.</p>
+            </div>
+            
             <div class="footer">
                 <p><em>Email ini dikirim secara otomatis oleh sistem Verval Pupuk 2.0</em></p>
+                <p><small>⚠ Warning: File tidak diproses karena tidak memiliki kolom TGL INPUT atau format tidak sesuai.</small></p>
+                <p><small>✅ Sukses: File berhasil diproses dan di-rename sesuai bulan.</small></p>
             </div>
         </div>
     </body>
@@ -426,6 +487,8 @@ def create_email_body(processed_files, error_messages):
 # ----------------------------------------------------
 
 def main():
+    try:
+       def main():
     try:
         add_log("🚀 Memulai proses Excel Verval Pupuk")
         
@@ -444,7 +507,7 @@ def main():
                 subject="[Verval Pupuk] Tidak Ada File untuk Diproses",
                 body=f"<p>Tidak ditemukan file Excel di folder sumber pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>"
             )
-            return 0
+            return 0  # ✅ Exit code sukses meski tidak ada file
 
         add_log(f"📂 Ditemukan {len(files)} file Excel")
         
@@ -459,7 +522,7 @@ def main():
         
         # Tentukan subject berdasarkan hasil
         if error_messages:
-            subject = f"[Verval Pupuk] Proses Selesai dengan {len(error_messages)} Error"
+            subject = f"[Verval Pupuk] Proses Selesai dengan {len(error_messages)} Warning"
         elif processed_files:
             subject = f"[Verval Pupuk] Berhasil Memproses {len(processed_files)} File"
         else:
@@ -467,13 +530,13 @@ def main():
         
         send_email_notification(subject, email_body)
         
-        add_log("🎉 Proses selesai!")
-        
-        # Return status untuk GitHub Actions
-        if error_messages:
-            return 1  # Exit code error
-        
-        return 0  # Exit code sukses
+        # LOGIKA EXIT CODE YANG BARU
+        if processed_files:
+            add_log(f"🎉 Proses selesai! {len(processed_files)} file berhasil diproses, {len(error_messages)} warning")
+            return 0  # ✅ Exit code sukses jika ada minimal 1 file berhasil
+        else:
+            add_log("ℹ️ Tidak ada file yang berhasil diproses")
+            return 0  # ✅ Tetap exit code sukses, karena ini bukan error sistem
         
     except Exception as e:
         error_msg = f"❌ Error utama: {str(e)}"
@@ -492,7 +555,7 @@ def main():
             body=error_email_body
         )
         
-        return 1  # Exit code error
+        return 1  # ❌ Exit code error hanya untuk exception sistem
 
 if __name__ == "__main__":
     exit_code = main()
