@@ -2,8 +2,8 @@ name: Cleaning Data Versi Web Otomatis
 
 on:
   schedule:
-    # Jam 17:30 UTC = 00:30 WIB (setelah script klaster)
-    - cron: "30 17 * * *"
+    # Jam 16:30 UTC = 23:30 WIB (setelah script data tebus pubers)
+    - cron: "30 16 * * *"
   workflow_dispatch:
 
 jobs:
