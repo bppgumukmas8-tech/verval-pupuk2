@@ -1,10 +1,9 @@
 name: Proses Excel Verval Pupuk
 
 on:
-  workflow_dispatch:  # Manual trigger dari GitHub UI
   schedule:
-    # Jalankan setiap hari Senin-Jumat jam 08:00 WIB (01:00 UTC)
-    - cron: '0 1 * * 1-5'
+    - cron: "0 15 * * *"
+  workflow_dispatch:
 
 jobs:
   process-excel:
@@ -12,13 +11,12 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # Update ke v4 untuk kompatibilitas
+      uses: actions/checkout@v4
     
     - name: Setup Python
-      uses: actions/setup-python@v5  # Update ke v5
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-        cache: 'pip'
         
     - name: Install dependencies
       run: |
@@ -28,14 +26,22 @@ jobs:
         
     - name: Run Excel Processor
       env:
-        # SESUAIKAN DENGAN KONVENSI REPO YANG SUDAH ADA:
         GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
         SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
         SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
         RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
       run: |
-        cd $GITHUB_WORKSPACE
         python scripts/proses_excel.py
+        EXIT_CODE=$?
+        echo "Exit code: $EXIT_CODE"
+        # Exit code 0: sukses total
+        # Exit code 1: error sistem
+        # Exit code lainnya: warning saja
+        if [ $EXIT_CODE -eq 1 ]; then
+          exit 1  # Hanya exit 1 jika error sistem
+        else
+          exit 0  # Selalu success untuk warning
+        end
         
     - name: Upload logs on failure
       if: failure()
