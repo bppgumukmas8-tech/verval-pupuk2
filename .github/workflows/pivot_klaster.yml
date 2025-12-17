@@ -2,8 +2,8 @@ name: Rekap Klaster Status Otomatis
 
 on:
   schedule:
-    # Jam 17:00 UTC = 00:00 WIB (setengah jam setelah rekap utama)
-    - cron: "0 17 * * *"
+    # Jam 18:00 UTC = 00:00 WIB (setengah jam setelah rekap utama)
+    - cron: "0 18 * * *"
   workflow_dispatch:
 
 jobs:
