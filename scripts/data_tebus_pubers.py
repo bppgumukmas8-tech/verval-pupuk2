@@ -207,39 +207,42 @@ def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
 # ============================
 def write_to_google_sheet(worksheet, dataframe):
     """
-    Menulis DataFrame ke Google Sheets dengan metode yang lebih stabil
+    Menulis DataFrame ke Google Sheets dengan SATU permintaan batch_update.
+    MEMASTIKAN data lama dihapus terlebih dahulu untuk hasil yang bersih.
     """
     try:
-        print(f"📝 Menyiapkan data untuk ditulis ({len(dataframe)} baris, {len(dataframe.columns)} kolom)...")
+        print(f"📝 Menyiapkan data untuk batch update ({len(dataframe)} baris, {len(dataframe.columns)} kolom)...")
         
-        # Konversi DataFrame ke list of lists
+        # 1. HAPUS SEMUA DATA DI SHEET INI (Clear)
+        print("🧹 Membersihkan data lama di sheet...")
+        worksheet.clear()  # Ini adalah 1 API call tambahan, tapi sangat penting
+        
+        # 2. Konversi DataFrame ke format yang diperlukan oleh batch_update
         data_to_update = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
         
-        print(f"📦 Ukuran data: {len(data_to_update)} baris x {len(data_to_update[0]) if data_to_update else 0} kolom")
+        # 3. Jika tidak ada data, hentikan proses di sini
+        if not data_to_update or len(data_to_update) == 1 and not data_to_update[0]:
+            print("ℹ️  Tidak ada data untuk ditulis.")
+            return True
         
-        # Tulis data sekaligus dengan chunking untuk data besar
-        total_rows = len(data_to_update)
+        # 4. Tentukan range A1 untuk mulai menulis
+        start_cell = 'A1'
         
-        if total_rows <= 1000:
-            # Untuk data kecil (<1000 baris), tulis sekaligus
-            print("🔄 Menulis data sekaligus...")
-            worksheet.update('A1', data_to_update, value_input_option='USER_ENTERED')
-            print(f"✅ Data berhasil ditulis ({total_rows} baris)")
-        else:
-            # Untuk data besar, tulis per 500 baris untuk hindari timeout
-            print(f"🔄 Data besar terdeteksi, menulis per 500 baris...")
-            chunk_size = 500
-            
-            for i in range(0, total_rows, chunk_size):
-                end_idx = min(i + chunk_size, total_rows)
-                chunk = data_to_update[i:end_idx]
-                start_cell = f'A{i+1}'
-                
-                print(f"  📄 Menulis chunk {i//chunk_size + 1}: baris {i+1}-{end_idx}...")
-                worksheet.update(start_cell, chunk, value_input_option='USER_ENTERED')
-            
-            print(f"✅ Semua data berhasil ditulis ({total_rows} baris dalam {((total_rows-1)//chunk_size)+1} chunk)")
+        # 5. Gunakan batch_update dengan SATU request untuk menulis semua data baru
+        # Format: {'range': 'A1', 'values': [list_of_rows]}
+        body = {
+            'value_input_option': 'USER_ENTERED',
+            'data': [{
+                'range': start_cell,
+                'values': data_to_update
+            }]
+        }
         
+        # 6. Eksekusi batch update (hanya 1 API call untuk menulis)
+        print(f"🔄 Mengirim batch update (1 API call) untuk {len(data_to_update)} baris data...")
+        worksheet.spreadsheet.batch_update(body)
+        
+        print(f"✅ Sheet berhasil dibersihkan dan data baru ditulis ({len(data_to_update)} baris)")
         return True
         
     except Exception as e:
