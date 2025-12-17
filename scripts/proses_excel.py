@@ -11,13 +11,15 @@ from email.mime.multipart import MIMEMultipart
 import json
 
 # ----------------------------------------------------
-# KONFIGURASI (menggunakan secrets dari environment variables)
+# KONFIGURASI
 # ----------------------------------------------------
 
-# Baca dari environment variables (akan diatur di GitHub Secrets)
-FOLDER_ID = os.environ.get("FOLDER_ID", "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn")
-ARCHIVE_FOLDER_ID = os.environ.get("ARCHIVE_FOLDER_ID", "1ZawIfza3gLheAfl2D5ocliV0LWpzFFD_")
-SERVICE_ACCOUNT_JSON = os.environ.get("SERVICE_ACCOUNT_JSON")
+# FOLDER ID langsung ditulis di kode
+FOLDER_ID = "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn"           # Folder sumber
+ARCHIVE_FOLDER_ID = "1ZawIfza3gLheAfl2D5ocliV0LWpzFFD_"   # Folder arsip
+
+# Baca dari environment variables (mengikuti konvensi repo)
+GOOGLE_APPLICATION_CREDENTIALS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_EMAIL_PASSWORD")
 RECIPIENT_EMAILS = os.environ.get("RECIPIENT_EMAILS", "")
@@ -45,6 +47,36 @@ def add_log(message, is_error=False):
     print(log_entry)
 
 # ----------------------------------------------------
+# VALIDASI KONFIGURASI
+# ----------------------------------------------------
+
+def validate_config():
+    """Validasi semua konfigurasi yang diperlukan"""
+    required_configs = {
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON": GOOGLE_APPLICATION_CREDENTIALS_JSON,
+        "SENDER_EMAIL": SENDER_EMAIL,
+        "SENDER_EMAIL_PASSWORD": SENDER_PASSWORD,
+    }
+    
+    missing = [name for name, value in required_configs.items() if not value]
+    
+    if missing:
+        error_msg = f"⚠ Konfigurasi berikut belum diatur: {', '.join(missing)}"
+        add_log(error_msg, is_error=True)
+        raise ValueError(error_msg)
+    
+    # Validasi tambahan: cek format JSON
+    try:
+        json.loads(GOOGLE_APPLICATION_CREDENTIALS_JSON)
+        add_log("✓ Format JSON valid")
+    except json.JSONDecodeError as e:
+        add_log(f"✗ Format JSON tidak valid: {str(e)}", is_error=True)
+        raise
+    
+    add_log("✓ Semua konfigurasi valid")
+    return True
+
+# ----------------------------------------------------
 # AUTENTIKASI GOOGLE DRIVE
 # ----------------------------------------------------
 
@@ -53,11 +85,11 @@ def authenticate_drive():
     try:
         SCOPES = ["https://www.googleapis.com/auth/drive"]
         
-        if not SERVICE_ACCOUNT_JSON:
-            raise ValueError("SERVICE_ACCOUNT_JSON tidak ditemukan di environment variables")
+        if not GOOGLE_APPLICATION_CREDENTIALS_JSON:
+            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON tidak ditemukan di environment variables")
         
         # Parse service account dari string JSON
-        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+        service_account_info = json.loads(GOOGLE_APPLICATION_CREDENTIALS_JSON)
         
         creds = service_account.Credentials.from_service_account_info(
             service_account_info, 
@@ -67,6 +99,9 @@ def authenticate_drive():
         drive = build("drive", "v3", credentials=creds)
         add_log("✓ Berhasil autentikasi ke Google Drive")
         return drive
+    except json.JSONDecodeError as e:
+        add_log(f"✗ Format JSON tidak valid: {str(e)}", is_error=True)
+        raise
     except Exception as e:
         add_log(f"✗ Gagal autentikasi ke Google Drive: {str(e)}", is_error=True)
         raise
@@ -394,6 +429,9 @@ def main():
     try:
         add_log("🚀 Memulai proses Excel Verval Pupuk")
         
+        # Validasi konfigurasi
+        validate_config()
+        
         # Autentikasi
         drive = authenticate_drive()
         
@@ -406,7 +444,7 @@ def main():
                 subject="[Verval Pupuk] Tidak Ada File untuk Diproses",
                 body=f"<p>Tidak ditemukan file Excel di folder sumber pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>"
             )
-            return
+            return 0
 
         add_log(f"📂 Ditemukan {len(files)} file Excel")
         
