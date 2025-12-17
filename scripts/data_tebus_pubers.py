@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import gspread
 import re
-from gspread_dataframe import set_with_dataframe
+import time
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -218,162 +218,291 @@ def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
     return paths
 
 # ============================
+# FUNGSI UNTUK MENULIS DATA KE GOOGLE SHEETS (DIPERBAIKI)
+# ============================
+def write_to_google_sheet(worksheet, dataframe):
+    """
+    Menulis DataFrame ke Google Sheets dengan metode chunking untuk menghindari error API
+    """
+    try:
+        print(f"📤 Menulis {len(dataframe)} baris data ke Google Sheets...")
+        
+        # 1. Clear worksheet terlebih dahulu
+        print("🧹 Membersihkan data lama di sheet...")
+        worksheet.clear()
+        
+        # 2. Konversi DataFrame menjadi list of lists (format API)
+        data_to_update = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
+        total_rows_to_write = len(data_to_update)
+        
+        print(f"📦 Ukuran data: {total_rows_to_write} baris x {len(dataframe.columns)} kolom")
+        
+        # 3. Tentukan ukuran chunk yang aman (10,000 baris per request)
+        CHUNK_SIZE = 10000
+        chunk_count = (total_rows_to_write + CHUNK_SIZE - 1) // CHUNK_SIZE  # Pembulatan ke atas
+        
+        print(f"🔀 Membagi data menjadi {chunk_count} chunk...")
+        
+        # 4. Tulis data per chunk dengan jeda antar chunk
+        for chunk_index in range(chunk_count):
+            start_row = chunk_index * CHUNK_SIZE
+            end_row = min(start_row + CHUNK_SIZE, total_rows_to_write)
+            
+            # Ambil potongan data untuk chunk ini
+            current_chunk = data_to_update[start_row:end_row]
+            
+            # Tentukan sel awal untuk chunk ini (A1, A10001, A20001, dst.)
+            start_cell = f'A{start_row + 1}'
+            
+            print(f"   📄 Menulis chunk {chunk_index + 1}/{chunk_count}: baris {start_row + 1}-{end_row}...")
+            
+            try:
+                # Gunakan update sederhana dengan value_input_option
+                worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
+                
+                # Tambahkan jeda singkat ANTAR CHUNK untuk menghindari beban API berlebihan
+                if chunk_index < chunk_count - 1:  # Jangan tunggu di chunk terakhir
+                    time.sleep(2)  # Jeda 2 detik antara chunk
+                    
+            except Exception as chunk_error:
+                print(f"❌ Error pada chunk {chunk_index + 1}: {str(chunk_error)}")
+                print("🔄 Mencoba lagi dengan jeda yang lebih lama...")
+                
+                # Coba sekali lagi dengan jeda lebih lama
+                time.sleep(5)
+                try:
+                    worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
+                    print(f"✅ Chunk {chunk_index + 1} berhasil pada percobaan kedua")
+                except Exception as retry_error:
+                    print(f"❌ Gagal lagi pada chunk {chunk_index + 1}: {str(retry_error)}")
+                    raise retry_error
+        
+        print(f"✅ Semua data berhasil ditulis! Total {total_rows_to_write} baris.")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Gagal menulis data ke Google Sheets: {str(e)}")
+        raise
+
+# ============================
 # PROSES UTAMA
 # ============================
-try:
-    log = []
-    all_data = []
-    total_rows = 0
-    file_count = 0
-    nik_cleaning_log = []
-
-    print("🔍 Memulai proses rekap data...")
-    print(f"📧 Email pengirim: {SENDER_EMAIL}")
-    print(f"📧 Email penerima: {', '.join(recipient_list)}")
-
-    # Download semua Excel
-    excel_files = download_excel_files(FOLDER_ID)
-    print(f"📁 Berhasil download {len(excel_files)} file Excel")
-
-    for fpath in excel_files:
-        file_count += 1
-        try:
-            df = pd.read_excel(fpath, dtype=str)  # pastikan NIK terbaca full string
-        except Exception as e:
-            print(f"⚠️  Gagal membaca file {os.path.basename(fpath)}: {str(e)}")
-            log.append(f"- {os.path.basename(fpath)}: GAGAL DIBACA - {str(e)}")
-            continue
-
-        # PROSES BERSIHKAN NIK
-        original_nik_count = len(df)
-        
-        # Pastikan kolom NIK ada
-        if 'NIK' not in df.columns:
-            print(f"⚠️  Kolom NIK tidak ditemukan di file {os.path.basename(fpath)}")
-            log.append(f"- {os.path.basename(fpath)}: KOLOM NIK TIDAK DITEMUKAN")
-            continue
-            
-        df['NIK_ORIGINAL'] = df['NIK']  # Simpan nilai asli untuk logging
-        df['NIK'] = df['NIK'].apply(clean_nik)
-
-        # Log NIK yang dibersihkan
-        cleaned_niks = df[df['NIK_ORIGINAL'] != df['NIK']][['NIK_ORIGINAL', 'NIK']]
-        for _, row in cleaned_niks.iterrows():
-            nik_cleaning_log.append(f"'{row['NIK_ORIGINAL']}' -> {row['NIK']}")
-
-        # Hapus baris dengan NIK kosong setelah cleaning
-        df = df[df['NIK'].notna()]
-        cleaned_nik_count = len(df)
-
-        total_rows += cleaned_nik_count
-        log.append(f"- {os.path.basename(fpath)}: {original_nik_count} -> {cleaned_nik_count} baris (setelah cleaning NIK)")
-        all_data.append(df)
-
-    # Gabungkan semua data
-    combined = pd.concat(all_data, ignore_index=True)
-
-    # Pastikan kolom sesuai header
-    cols = [
-        "KECAMATAN", "NO TRANSAKSI", "NAMA KIOS", "NIK", "NAMA PETANI",
-        "UREA", "NPK", "SP36", "ZA", "NPK FORMULA", "ORGANIK", "ORGANIK CAIR",
-        "TGL TEBUS", "STATUS"
-    ]
-
-    # Handle jika ada kolom yang missing
-    for col in cols:
-        if col not in combined.columns:
-            combined[col] = ""
-
-    combined = combined[cols]
-
-    # Rekap per NIK dengan urutan bulan dan tanggal
-    output_rows = []
-    
-    for nik, group in combined.groupby("NIK"):
-        # Urutkan data dalam group berdasarkan bulan dan tanggal
-        group_sorted = urutkan_data_per_nik(group)
-        
-        list_info = []
-        for i, (_, row) in enumerate(group_sorted.iterrows(), start=1):
-            # Format tanggal asli (dd-mm-yyyy)
-            tgl_tebus = row['TGL TEBUS']
-            
-            text = (
-                f"{i}) {row['NAMA PETANI']} Tgl Tebus {tgl_tebus} "
-                f"No Transaksi {row['NO TRANSAKSI']} Kios {row['NAMA KIOS']}, Kecamatan {row['KECAMATAN']}, "
-                f"Urea {row['UREA']} kg, NPK {row['NPK']} kg, SP36 {row['SP36']} kg, "
-                f"ZA {row['ZA']} kg, NPK Formula {row['NPK FORMULA']} kg, "
-                f"Organik {row['ORGANIK']} kg, Organik Cair {row['ORGANIK CAIR']} kg, "
-                f"Status {row['STATUS']}"
-            )
-            list_info.append(text)
-        
-        # Ambil nama dari record pertama (asumsi nama sama untuk NIK yang sama)
-        nama_petani = group_sorted['NAMA PETANI'].iloc[0] if len(group_sorted) > 0 else ""
-        
-        output_rows.append([nik, nama_petani, "\n".join(list_info)])
-
-    out_df = pd.DataFrame(output_rows, columns=["NIK", "Nama", "Data"])
-
-    # Tulis ke Google Sheet
-    sh = gc.open_by_key(SPREADSHEET_ID)
+def main():
     try:
-        ws = sh.worksheet(SHEET_NAME)
-    except:
-        ws = sh.add_worksheet(SHEET_NAME, rows=1, cols=3)
+        log = []
+        all_data = []
+        total_rows = 0
+        file_count = 0
+        nik_cleaning_log = []
 
-    ws.clear()
-    set_with_dataframe(ws, out_df)
+        print("=" * 60)
+        print("🔍 MEMULAI PROSES REKAP DATA")
+        print("=" * 60)
+        print(f"📧 Email pengirim: {SENDER_EMAIL}")
+        print(f"📧 Email penerima: {', '.join(recipient_list)}")
+        print()
 
-    # Buat summary untuk email
-    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-    success_message = f"""
-REKAP DATA BERHASIL ✓
+        # 1. Download semua Excel
+        excel_files = download_excel_files(FOLDER_ID)
+        print(f"📁 Berhasil download {len(excel_files)} file Excel")
+        print()
+
+        # 2. Proses setiap file
+        for fpath in excel_files:
+            file_count += 1
+            filename = os.path.basename(fpath)
+            print(f"🔄 Memproses file {file_count}/{len(excel_files)}: {filename}")
+            
+            try:
+                df = pd.read_excel(fpath, dtype=str)
+            except Exception as e:
+                print(f"   ❌ Gagal membaca file: {str(e)}")
+                log.append(f"- {filename}: GAGAL DIBACA - {str(e)}")
+                continue
+
+            # Cek kolom NIK
+            if 'NIK' not in df.columns:
+                print(f"   ⚠️  Kolom NIK tidak ditemukan")
+                log.append(f"- {filename}: KOLOM NIK TIDAK DITEMUKAN")
+                continue
+                
+            # Simpan original dan bersihkan NIK
+            original_nik_count = len(df)
+            df['NIK_ORIGINAL'] = df['NIK']
+            df['NIK'] = df['NIK'].apply(clean_nik)
+
+            # Log NIK yang dibersihkan
+            cleaned_niks = df[df['NIK_ORIGINAL'] != df['NIK']][['NIK_ORIGINAL', 'NIK']]
+            for _, row in cleaned_niks.iterrows():
+                nik_cleaning_log.append(f"'{row['NIK_ORIGINAL']}' -> {row['NIK']}")
+
+            # Hapus baris dengan NIK kosong
+            df = df[df['NIK'].notna()]
+            cleaned_nik_count = len(df)
+
+            total_rows += cleaned_nik_count
+            log.append(f"- {filename}: {original_nik_count} -> {cleaned_nik_count} baris")
+            all_data.append(df)
+            
+            print(f"   ✅ Berhasil: {original_nik_count} → {cleaned_nik_count} baris")
+
+        print()
+        
+        if not all_data:
+            raise ValueError("❌ Tidak ada data yang berhasil diproses dari semua file")
+
+        # 3. Gabungkan semua data
+        print("🔄 Menggabungkan data dari semua file...")
+        combined = pd.concat(all_data, ignore_index=True)
+        print(f"✅ Total data gabungan: {len(combined)} baris")
+
+        # 4. Pastikan kolom sesuai
+        cols = [
+            "KECAMATAN", "NO TRANSAKSI", "NAMA KIOS", "NIK", "NAMA PETANI",
+            "UREA", "NPK", "SP36", "ZA", "NPK FORMULA", "ORGANIK", "ORGANIK CAIR",
+            "TGL TEBUS", "STATUS"
+        ]
+
+        for col in cols:
+            if col not in combined.columns:
+                combined[col] = ""
+
+        combined = combined[cols]
+
+        # 5. Rekap per NIK dengan urutan bulan dan tanggal
+        print("🔄 Membuat rekap per NIK...")
+        output_rows = []
+        
+        unique_nik_count = 0
+        for nik, group in combined.groupby("NIK"):
+            unique_nik_count += 1
+            
+            # Urutkan data dalam group
+            group_sorted = urutkan_data_per_nik(group)
+            
+            list_info = []
+            for i, (_, row) in enumerate(group_sorted.iterrows(), start=1):
+                tgl_tebus = row['TGL TEBUS']
+                
+                text = (
+                    f"{i}) {row['NAMA PETANI']} Tgl Tebus {tgl_tebus} "
+                    f"No Transaksi {row['NO TRANSAKSI']} Kios {row['NAMA KIOS']}, Kecamatan {row['KECAMATAN']}, "
+                    f"Urea {row['UREA']} kg, NPK {row['NPK']} kg, SP36 {row['SP36']} kg, "
+                    f"ZA {row['ZA']} kg, NPK Formula {row['NPK FORMULA']} kg, "
+                    f"Organik {row['ORGANIK']} kg, Organik Cair {row['ORGANIK CAIR']} kg, "
+                    f"Status {row['STATUS']}"
+                )
+                list_info.append(text)
+            
+            nama_petani = group_sorted['NAMA PETANI'].iloc[0] if len(group_sorted) > 0 else ""
+            output_rows.append([nik, nama_petani, "\n".join(list_info)])
+
+        out_df = pd.DataFrame(output_rows, columns=["NIK", "Nama", "Data"])
+        print(f"✅ Rekap selesai: {unique_nik_count} NIK unik ditemukan")
+
+        # 6. Tulis ke Google Sheet (DENGAN FUNGSI BARU)
+        print()
+        print("=" * 60)
+        print("📤 MENULIS DATA KE GOOGLE SHEETS")
+        print("=" * 60)
+        
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        
+        # Cek atau buat worksheet
+        try:
+            ws = sh.worksheet(SHEET_NAME)
+            print(f"✅ Sheet '{SHEET_NAME}' ditemukan")
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"⚠️  Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
+            ws = sh.add_worksheet(
+                title=SHEET_NAME, 
+                rows=max(1000, len(out_df) + 100), 
+                cols=len(out_df.columns)
+            )
+            print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat")
+        
+        # Tulis data dengan fungsi yang sudah diperbaiki
+        write_to_google_sheet(ws, out_df)
+
+        # 7. Buat laporan sukses
+        print()
+        print("=" * 60)
+        print("✅ PROSES SELESAI")
+        print("=" * 60)
+        
+        now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        success_message = f"""
+REKAP DATA BERHASIL DIPERBAIKI ✓
 
 📅 Tanggal Proses: {now}
 📁 File Diproses: {file_count}
-📊 Total Data: {total_rows} baris
+📊 Total Data Awal: {total_rows} baris
 👥 Unique NIK: {len(out_df)}
 🔧 NIK Dibersihkan: {len(nik_cleaning_log)} entri
 
 📋 DETAIL FILE:
 {chr(10).join(log)}
 
-🔍 CONTOH NIK YANG DIBERSIHKAN:
-{chr(10).join(nik_cleaning_log[:10])}  # Tampilkan 10 pertama saja
-{"... (masih ada yang lain)" if len(nik_cleaning_log) > 10 else ""}
+🔍 CONTOH NIK YANG DIBERSIHKAN (10 pertama):
+{chr(10).join(nik_cleaning_log[:10])}
+{"... (masih ada " + str(len(nik_cleaning_log) - 10) + " entri lainnya)" if len(nik_cleaning_log) > 10 else ""}
 
-✅ Data telah berhasil diupload ke Google Sheets:
-📊 Spreadsheet: {SPREADSHEET_ID}
+✅ DATA TELAH BERHASIL DIUPLOAD:
+📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
 📄 Sheet: {SHEET_NAME}
+📈 Baris Data: {len(out_df)}
 
-📝 CATATAN:
-Data telah diurutkan berdasarkan bulan (Jan-Des) dan tanggal (termuda-terlama)
-untuk setiap NIK.
+🔧 PERBAIKAN YANG DITERAPKAN:
+1. Mengganti set_with_dataframe() dengan metode chunking
+2. Menambahkan retry mechanism untuk error sementara
+3. Jeda antar request untuk menghindari rate limiting
 
 📍 REPOSITORY: verval-pupuk2/scripts/data_tebus_pubers.py
 """
 
-    # Print ke console
-    print(f"✅ Rekap selesai: {now}, File: {file_count}, Baris: {total_rows}, Unique NIK: {len(out_df)}")
+        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {total_rows}, NIK: {len(out_df)}")
 
-    # Kirim email notifikasi sukses
-    send_email_notification("REKAP DATA BERHASIL", success_message, is_success=True)
+        # 8. Kirim email notifikasi sukses
+        print("📧 Mengirim notifikasi email...")
+        send_email_notification("REKAP DATA BERHASIL (DIPERBAIKI)", success_message, is_success=True)
+        
+        print("\n" + "=" * 60)
+        print("🎉 SEMUA PROSES TELAH BERHASIL!")
+        print("=" * 60)
+        
+        return True
 
-except Exception as e:
-    # Buat error message
-    error_message = f"""
+    except Exception as e:
+        # Buat error message
+        error_message = f"""
 REKAP DATA GAGAL ❌
 
 📅 Tanggal Proses: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
 📍 Repository: verval-pupuk2/scripts/data_tebus_pubers.py
-⚠️ Error: {str(e)}
+📊 Status: Gagal saat menulis ke Google Sheets
 
-🔧 Traceback:
-{traceback.format_exc()}
+⚠️ ERROR DETAILS:
+{str(e)}
+
+🔧 TROUBLESHOOTING:
+1. Pastikan service account punya akses EDITOR di Google Sheet
+2. Cek apakah spreadsheet ID benar: {SPREADSHEET_ID}
+3. Service Account: github-verval-pupuk@verval-pupuk-automation.iam.gserviceaccount.com
+
+🔧 TRACEBACK:
+{traceback.format_exc()[:500]}... (truncated)
 """
-    print("❌ REKAP GAGAL")
-    print(error_message)
+        print("\n" + "=" * 60)
+        print("❌ REKAP GAGAL")
+        print("=" * 60)
+        print(error_message)
 
-    # Kirim email notifikasi error
-    send_email_notification("REKAP DATA GAGAL", error_message, is_success=False)
+        # Kirim email notifikasi error
+        send_email_notification("REKAP DATA GAGAL", error_message, is_success=False)
+        return False
+
+# ============================
+# JALANKAN PROSES UTAMA
+# ============================
+if __name__ == "__main__":
+    main()
