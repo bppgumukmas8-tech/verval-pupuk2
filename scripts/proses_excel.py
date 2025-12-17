@@ -272,7 +272,7 @@ def process_excel(drive, file_id, file_name):
             if len(df.columns) > 5:
                 columns_list += f" ... (total: {len(df.columns)} kolom)"
             add_log(f"⚠ Kolom TGL INPUT tidak ditemukan. Kolom yang ada: {columns_list}")
-            return None  # ⬅️ Return None, bukan False
+            return None
 
         df.rename(columns={found_col: "TGL INPUT"}, inplace=True)
         
@@ -488,8 +488,6 @@ def create_email_body(processed_files, error_messages):
 
 def main():
     try:
-       def main():
-    try:
         add_log("🚀 Memulai proses Excel Verval Pupuk")
         
         # Validasi konfigurasi
@@ -507,7 +505,7 @@ def main():
                 subject="[Verval Pupuk] Tidak Ada File untuk Diproses",
                 body=f"<p>Tidak ditemukan file Excel di folder sumber pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>"
             )
-            return 0  # ✅ Exit code sukses meski tidak ada file
+            return 0
 
         add_log(f"📂 Ditemukan {len(files)} file Excel")
         
@@ -555,7 +553,7 @@ def main():
             body=error_email_body
         )
         
-        return 1  # ❌ Exit code error hanya untuk exception sistem
+        return 1
 
 if __name__ == "__main__":
     exit_code = main()
