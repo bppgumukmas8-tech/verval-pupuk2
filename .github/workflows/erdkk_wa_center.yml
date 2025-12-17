@@ -2,9 +2,10 @@ name: ERDKK WA Center Otomatis
 
 on:
   schedule:
-    # Jam 19:00 UTC = 02:00 WIB (setelah semua script lain)
-    - cron: "0 19 * * *"
-  workflow_dispatch:
+    # Jalankan tiap tanggal 1 pukul 23:00 WIB (16:00 UTC)
+    # Format: MENIT JAM TANGGAL BULAN HARI-MINGGU
+    - cron: '0 16 1 * *'  # Setiap tanggal 1 jam 16:00 UTC = 23:00 WIB
+  workflow_dispatch:      # Manual trigger
 
 jobs:
   run-erdkk-wa-center:
