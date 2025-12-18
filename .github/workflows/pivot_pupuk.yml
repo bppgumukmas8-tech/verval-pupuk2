@@ -26,8 +26,10 @@ jobs:
     - name: 🔧 Run Pivot Data Script
       env:
         GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        SMTP_SERVER: smtp.gmail.com
+        SMTP_PORT: "587"
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+        RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
       run: |
         python scripts/pivot_pupuk.py
