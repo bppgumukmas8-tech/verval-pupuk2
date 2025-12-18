@@ -1,0 +1,38 @@
+name: 🧮 Sisa Kuota Pupuk
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'  # 23:00 WIB
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        
+        # Force numpy version
+        pip install "numpy<1.25"
+        
+        # Install requirements
+        pip install -r requirements.txt
+    
+    - name: Run script
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+        RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+      run: |
+        cd scripts
+        python sisa_kuota.py
