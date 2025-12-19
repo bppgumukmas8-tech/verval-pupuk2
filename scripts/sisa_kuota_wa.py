@@ -10,6 +10,8 @@ import traceback
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import time
+import random
 
 # ============================
 # KONFIGURASI
@@ -188,6 +190,23 @@ def send_email_notification(subject, message, is_success=True):
         return False
 
 # ============================
+# FUNGSI DENGAN EXPONENTIAL BACKOFF
+# ============================
+def execute_with_backoff(func, *args, max_retries=5, **kwargs):
+    """Menjalankan fungsi dengan exponential backoff untuk menghindari rate limit"""
+    for retry in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if "429" in str(e) and retry < max_retries - 1:
+                wait_time = (2 ** retry) + random.random()
+                print(f"⚠️  Rate limit terdeteksi, retry {retry+1}/{max_retries} dalam {wait_time:.2f} detik...")
+                time.sleep(wait_time)
+            else:
+                raise e
+    return None
+
+# ============================
 # FUNGSI PROSES DATA DENGAN ERROR HANDLING
 # ============================
 def process_sisa_kuota_wa():
@@ -224,10 +243,10 @@ def process_sisa_kuota_wa():
         # ============================================
         print(f"\n📥 Baca data dari sheet '{SOURCE_SHEET_NAME}'...")
         
-        source_spreadsheet = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+        source_spreadsheet = execute_with_backoff(gc.open_by_key, SOURCE_SPREADSHEET_ID)
         
         try:
-            source_worksheet = source_spreadsheet.worksheet(SOURCE_SHEET_NAME)
+            source_worksheet = execute_with_backoff(source_spreadsheet.worksheet, SOURCE_SHEET_NAME)
             print(f"✅ Sheet '{SOURCE_SHEET_NAME}' ditemukan")
         except Exception as e:
             print(f"❌ Sheet '{SOURCE_SHEET_NAME}' tidak ditemukan: {e}")
@@ -235,7 +254,7 @@ def process_sisa_kuota_wa():
         
         print("📊 Membaca data dari Google Sheets...")
         try:
-            data = source_worksheet.get_all_records()
+            data = execute_with_backoff(source_worksheet.get_all_records)
             if not data:
                 print("⚠️  Tidak ada data di sheet Sisa")
                 return False
@@ -337,87 +356,86 @@ def process_sisa_kuota_wa():
         print(f"✅ Rekap selesai: {len(output_df)} NIK unik")
         
         # ============================================
-# BAGIAN 4: TULIS KE SHEET TARGET (DENGAN BATCH UPDATE)
-# ============================================
-print(f"\n📤 Menulis hasil ke sheet '{TARGET_SHEET_NAME}'...")
-
-target_spreadsheet = gc.open_by_key(TARGET_SPREADSHEET_ID)
-
-try:
-    target_worksheet = target_spreadsheet.worksheet(TARGET_SHEET_NAME)
-    print(f"   • Sheet '{TARGET_SHEET_NAME}' sudah ada, menghapus isi...")
-    # Gunakan batch_clear untuk efisiensi
-    target_worksheet.batch_clear(["A:Z"])
-except Exception as e:
-    if "not found" in str(e).lower():
-        print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ada, membuat baru...")
-        target_worksheet = target_spreadsheet.add_worksheet(
-            title=TARGET_SHEET_NAME,
-            rows=max(len(output_df) + 100, 1000),
-            cols=len(output_df.columns)
-        )
-    else:
-        raise e
-
-print("   • Menyiapkan data untuk batch update...")
-
-# 1. Format Header (Opsional, tetapi membuat sheet rapi)
-try:
-    header_format = {
-        "backgroundColor": {"red": 0.2, "green": 0.6, "blue": 0.8},
-        "textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}
-    }
-    target_worksheet.format('A1:C1', header_format)
-except Exception as e:
-    print(f"   ⚠️  Gagal memformat header: {e}")
-
-# 2. Menyiapkan data untuk ditulis dalam SATU BATCH
-# Konversi DataFrame menjadi list of lists (format yang diterima oleh update)
-data_to_write = [output_df.columns.values.tolist()] + output_df.values.tolist()
-
-# 3. Tentukan range target (dari A1 hingga kolom terakhir dan baris terakhir)
-end_column = chr(64 + len(output_df.columns))  # Misal, jika 3 kolom -> 'C'
-end_row = len(data_to_write)
-target_range = f'A1:{end_column}{end_row}'
-
-print(f"   • Menulis {len(data_to_write)-1} baris data ke range {target_range}...")
-
-# 4. Gunakan batch update: SEMUA DATA DITULIS DALAM SATU PANGGILAN API
-try:
-    target_worksheet.update(
-        values=data_to_write,
-        range_name=target_range
-    )
-    print(f"✅ Data berhasil ditulis dalam satu batch update: {len(output_df)} baris")
-except Exception as e:
-    print(f"❌ Gagal dalam batch update utama: {e}")
-    # Fallback: coba tulis secara bertahap dengan jeda eksponensial
-    print("   • Mencoba fallback dengan exponential backoff...")
-    import time, random
-    
-    for i in range(len(data_to_write)):
-        # Tulis per baris untuk fallback
-        row_range = f'A{i+1}:{end_column}{i+1}'
-        row_data = [data_to_write[i]]
+        # BAGIAN 4: TULIS KE SHEET TARGET (OPTIMIZED)
+        # ============================================
+        print(f"\n📤 Menulis hasil ke sheet '{TARGET_SHEET_NAME}'...")
         
-        max_retries = 5
-        for retry in range(max_retries):
-            try:
-                target_worksheet.update(values=row_data, range_name=row_range)
-                break
-            except Exception as inner_e:
-                if "429" in str(inner_e) and retry < max_retries - 1:
-                    wait_time = (2 ** retry) + (random.random() * 1000) / 1000.0
-                    print(f"     ⚠️  Rate limit pada baris {i+1}, retry {retry+1} dalam {wait_time:.2f} detik...")
-                    time.sleep(wait_time)
-                else:
-                    raise inner_e
+        target_spreadsheet = execute_with_backoff(gc.open_by_key, TARGET_SPREADSHEET_ID)
         
-        # Jeda kecil antar baris untuk menghindari rate limit
-        if i % 10 == 0 and i > 0:
-            time.sleep(1)
-    
-    print(f"✅ Data berhasil ditulis (fallback method): {len(output_df)} baris")
+        try:
+            target_worksheet = execute_with_backoff(target_spreadsheet.worksheet, TARGET_SHEET_NAME)
+            print(f"   • Sheet '{TARGET_SHEET_NAME}' sudah ada, menghapus isi...")
+            execute_with_backoff(target_worksheet.clear)
+        except Exception as e:
+            if "not found" in str(e).lower():
+                print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ada, membuat baru...")
+                target_worksheet = execute_with_backoff(
+                    target_spreadsheet.add_worksheet,
+                    title=TARGET_SHEET_NAME,
+                    rows=max(len(output_df) + 100, 1000),
+                    cols=3
+                )
+            else:
+                raise e
+        
+        print("   • Menulis data ke Google Sheets...")
+        
+        # Gunakan metode batch update untuk menghindari rate limit
+        # Konversi DataFrame menjadi list of lists
+        data_to_write = [output_df.columns.values.tolist()] + output_df.values.tolist()
+        
+        # Tentukan range target
+        end_column = chr(64 + len(output_df.columns))  # A=65, B=66, etc.
+        end_row = len(data_to_write)
+        target_range = f'A1:{end_column}{end_row}'
+        
+        print(f"   • Menulis {len(data_to_write)-1} baris data ke range {target_range}...")
+        
+        # Update semua data dalam satu panggilan API
+        try:
+            execute_with_backoff(
+                target_worksheet.update,
+                values=data_to_write,
+                range_name=target_range
+            )
+            print(f"✅ Data berhasil ditulis dalam satu batch update: {len(output_df)} baris")
+        except Exception as e:
+            print(f"⚠️  Batch update gagal, mencoba metode per-baris dengan backoff: {e}")
+            
+            # Fallback: tulis per baris dengan backoff
+            for i in range(len(data_to_write)):
+                row_range = f'A{i+1}:{end_column}{i+1}'
+                row_data = [data_to_write[i]]
+                
+                for retry in range(5):
+                    try:
+                        target_worksheet.update(values=row_data, range_name=row_range)
+                        break
+                    except Exception as inner_e:
+                        if "429" in str(inner_e) and retry < 4:
+                            wait_time = (2 ** retry) + random.random()
+                            print(f"     ⚠️  Rate limit pada baris {i+1}, retry {retry+1} dalam {wait_time:.2f} detik...")
+                            time.sleep(wait_time)
+                        else:
+                            raise inner_e
+                
+                # Jeda kecil antar baris
+                if i % 20 == 0 and i > 0:
+                    time.sleep(1)
+            
+            print(f"✅ Data berhasil ditulis (metode fallback): {len(output_df)} baris")
+        
+        # Format header (opsional, bisa dihapus jika ingin lebih cepat)
+        try:
+            header_format = {
+                "backgroundColor": {"red": 0.2, "green": 0.6, "blue": 0.8},
+                "textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}
+            }
+            execute_with_backoff(target_worksheet.format, 'A1:C1', header_format)
+        except:
+            pass
+        
+        print(f"✅ Data berhasil ditulis: {len(output_df)} baris")
         
         # ============================================
         # BAGIAN 5: BUAT SUMMARY DAN KIRIM EMAIL
