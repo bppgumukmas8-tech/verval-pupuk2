@@ -337,36 +337,87 @@ def process_sisa_kuota_wa():
         print(f"✅ Rekap selesai: {len(output_df)} NIK unik")
         
         # ============================================
-        # BAGIAN 4: TULIS KE SHEET TARGET
-        # ============================================
-        print(f"\n📤 Menulis hasil ke sheet '{TARGET_SHEET_NAME}'...")
+# BAGIAN 4: TULIS KE SHEET TARGET (DENGAN BATCH UPDATE)
+# ============================================
+print(f"\n📤 Menulis hasil ke sheet '{TARGET_SHEET_NAME}'...")
+
+target_spreadsheet = gc.open_by_key(TARGET_SPREADSHEET_ID)
+
+try:
+    target_worksheet = target_spreadsheet.worksheet(TARGET_SHEET_NAME)
+    print(f"   • Sheet '{TARGET_SHEET_NAME}' sudah ada, menghapus isi...")
+    # Gunakan batch_clear untuk efisiensi
+    target_worksheet.batch_clear(["A:Z"])
+except Exception as e:
+    if "not found" in str(e).lower():
+        print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ada, membuat baru...")
+        target_worksheet = target_spreadsheet.add_worksheet(
+            title=TARGET_SHEET_NAME,
+            rows=max(len(output_df) + 100, 1000),
+            cols=len(output_df.columns)
+        )
+    else:
+        raise e
+
+print("   • Menyiapkan data untuk batch update...")
+
+# 1. Format Header (Opsional, tetapi membuat sheet rapi)
+try:
+    header_format = {
+        "backgroundColor": {"red": 0.2, "green": 0.6, "blue": 0.8},
+        "textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}
+    }
+    target_worksheet.format('A1:C1', header_format)
+except Exception as e:
+    print(f"   ⚠️  Gagal memformat header: {e}")
+
+# 2. Menyiapkan data untuk ditulis dalam SATU BATCH
+# Konversi DataFrame menjadi list of lists (format yang diterima oleh update)
+data_to_write = [output_df.columns.values.tolist()] + output_df.values.tolist()
+
+# 3. Tentukan range target (dari A1 hingga kolom terakhir dan baris terakhir)
+end_column = chr(64 + len(output_df.columns))  # Misal, jika 3 kolom -> 'C'
+end_row = len(data_to_write)
+target_range = f'A1:{end_column}{end_row}'
+
+print(f"   • Menulis {len(data_to_write)-1} baris data ke range {target_range}...")
+
+# 4. Gunakan batch update: SEMUA DATA DITULIS DALAM SATU PANGGILAN API
+try:
+    target_worksheet.update(
+        values=data_to_write,
+        range_name=target_range
+    )
+    print(f"✅ Data berhasil ditulis dalam satu batch update: {len(output_df)} baris")
+except Exception as e:
+    print(f"❌ Gagal dalam batch update utama: {e}")
+    # Fallback: coba tulis secara bertahap dengan jeda eksponensial
+    print("   • Mencoba fallback dengan exponential backoff...")
+    import time, random
+    
+    for i in range(len(data_to_write)):
+        # Tulis per baris untuk fallback
+        row_range = f'A{i+1}:{end_column}{i+1}'
+        row_data = [data_to_write[i]]
         
-        target_spreadsheet = gc.open_by_key(TARGET_SPREADSHEET_ID)
+        max_retries = 5
+        for retry in range(max_retries):
+            try:
+                target_worksheet.update(values=row_data, range_name=row_range)
+                break
+            except Exception as inner_e:
+                if "429" in str(inner_e) and retry < max_retries - 1:
+                    wait_time = (2 ** retry) + (random.random() * 1000) / 1000.0
+                    print(f"     ⚠️  Rate limit pada baris {i+1}, retry {retry+1} dalam {wait_time:.2f} detik...")
+                    time.sleep(wait_time)
+                else:
+                    raise inner_e
         
-        try:
-            target_worksheet = target_spreadsheet.worksheet(TARGET_SHEET_NAME)
-            print(f"   • Sheet '{TARGET_SHEET_NAME}' sudah ada, menghapus isi...")
-            target_worksheet.clear()
-        except:
-            print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ada, membuat baru...")
-            target_worksheet = target_spreadsheet.add_worksheet(
-                title=TARGET_SHEET_NAME,
-                rows=max(len(output_df) + 100, 1000),
-                cols=3
-            )
-        
-        print("   • Menulis data ke Google Sheets...")
-        set_with_dataframe(target_worksheet, output_df)
-        
-        try:
-            target_worksheet.format('A1:C1', {
-                'backgroundColor': {'red': 0.2, 'green': 0.6, 'blue': 0.8},
-                'textFormat': {'bold': True, 'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}}
-            })
-        except:
-            pass
-        
-        print(f"✅ Data berhasil ditulis: {len(output_df)} baris")
+        # Jeda kecil antar baris untuk menghindari rate limit
+        if i % 10 == 0 and i > 0:
+            time.sleep(1)
+    
+    print(f"✅ Data berhasil ditulis (fallback method): {len(output_df)} baris")
         
         # ============================================
         # BAGIAN 5: BUAT SUMMARY DAN KIRIM EMAIL
