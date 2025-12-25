@@ -2,7 +2,7 @@ name: Sisa Kuota WA
 
 on:
   schedule:
-    - cron: '0 18 * * *'  # Run daily at 01:00 AM WIB
+    - cron: '0 20 * * *'  # Run daily at 02:00 AM WIB
   workflow_dispatch:  # Manual trigger
 
 jobs:
