@@ -118,178 +118,64 @@ def gabung_komoditas_unique(komoditas_list):
 # ============================
 # FUNGSI PROSES DATA (MIRIP DENGAN VBA)
 # ============================
-def proses_data_gabungan(dataframes_list):
-    """
-    Memproses dan menggabungkan data berdasarkan NIK dan Poktan
-    Mirip dengan logika VBA
-    """
-    # Dictionary untuk menyimpan data hasil
-    data_dict = defaultdict(lambda: {
-        'data': None,
-        'komoditas_set': set(),
-        'indeks': None
-    })
-    
-    hasil_rows = []
-    header = None
-    
-    for df_idx, df in enumerate(dataframes_list):
-        # Konversi ke numpy array untuk proses cepat (seperti VBA)
-        data_array = df.values
-        
-        # Set header dari file pertama
-        if df_idx == 0:
-            header = list(df.columns)
-            # Sesuaikan dengan output VBA (kolom komoditas digabung)
-            output_header = header[:6] + ["KOMODITAS"] + header[9:] if len(header) > 9 else header
-            hasil_rows.append(output_header)
-        
-        # Proses setiap baris
-        for i in range(len(df)):
-            row = df.iloc[i]
-            
-            # Buat key unik seperti di VBA: KTP|Nama|Desa|Poktan|Kios
-            # Asumsi kolom: A=KTP, B=Nama, C=Desa, D=Poktan, E=Kios (sesuaikan jika berbeda)
-            key_parts = []
-            for col in ['KTP', 'NAMA', 'DESA', 'POKTAN', 'KIOS']:
-                col_lower = col.lower()
-                if col_lower in df.columns.str.lower():
-                    col_name = df.columns[df.columns.str.lower() == col_lower][0]
-                    key_parts.append(str(row[col_name]) if not pd.isna(row[col_name]) else "")
-                else:
-                    key_parts.append("")
-            
-            key = "|".join(key_parts)
-            
-            if key not in data_dict:
-                # Data baru, tambahkan ke hasil
-                data_dict[key]['indeks'] = len(hasil_rows)
-                
-                # Siapkan row hasil
-                hasil_row = []
-                
-                # Kolom 1-5 (A-E): Data utama
-                for j in range(5):
-                    if j < len(header):
-                        val = row[header[j]]
-                        # KTP sebagai teks
-                        if j == 0:
-                            hasil_row.append(str(val) if not pd.isna(val) else "")
-                        else:
-                            hasil_row.append(val if not pd.isna(val) else "")
-                    else:
-                        hasil_row.append("")
-                
-                # Kolom 6: Gabungkan komoditas dari kolom G, H, I (indeks 6,7,8)
-                komoditas_list = []
-                for col_idx in [6, 7, 8]:
-                    if col_idx < len(header):
-                        komoditas_list.append(row[header[col_idx]])
-                
-                komoditas_str = gabung_komoditas_unique(komoditas_list)
-                data_dict[key]['komoditas_set'] = set(komoditas_str.split()) if komoditas_str else set()
-                hasil_row.append(komoditas_str)
-                
-                # Kolom 7+: Data numerik (kolom 9+ dalam original)
-                for j in range(9, len(header)):
-                    if j < len(header):
-                        val = row[header[j]]
-                        # Konversi ke numeric jika mungkin
-                        try:
-                            if pd.isna(val) or val == "":
-                                num_val = 0
-                            else:
-                                num_val = float(str(val).replace(',', ''))
-                        except:
-                            num_val = 0
-                        hasil_row.append(num_val)
-                    else:
-                        hasil_row.append(0)
-                
-                data_dict[key]['data'] = hasil_row
-                hasil_rows.append(hasil_row)
-                
-            else:
-                # Update data yang sudah ada
-                idx = data_dict[key]['indeks']
-                existing_row = hasil_rows[idx]
-                
-                # Update komoditas
-                komoditas_list = []
-                for col_idx in [6, 7, 8]:
-                    if col_idx < len(header):
-                        komoditas_list.append(row[header[col_idx]])
-                
-                new_komoditas = gabung_komoditas_unique(komoditas_list)
-                if new_komoditas:
-                    new_set = set(new_komoditas.split())
-                    data_dict[key]['komoditas_set'].update(new_set)
-                    existing_row[5] = " ".join(data_dict[key]['komoditas_set'])
-                
-                # Jumlahkan nilai numerik (kolom 6+)
-                for j in range(6, len(existing_row)):
-                    if j < len(header) - 3:  # Adjust untuk kolom komoditas
-                        val = row[header[j+3]] if j+3 < len(header) else 0
-                        try:
-                            if pd.isna(val) or val == "":
-                                num_val = 0
-                            else:
-                                num_val = float(str(val).replace(',', ''))
-                        except:
-                            num_val = 0
-                        
-                        # Jumlahkan dengan existing
-                        try:
-                            existing_val = float(existing_row[j]) if existing_row[j] != "" else 0
-                        except:
-                            existing_val = 0
-                        
-                        existing_row[j] = existing_val + num_val
-    
-    return hasil_rows
+def proses_data_gabungan
 
 # ============================
 # FUNGSI STANDARDISASI KOLOM
 # ============================
 def standardize_columns(df):
     """
-    Standarisasi nama kolom untuk konsistensi
+    Standarisasi nama kolom untuk konsistensi dengan handling yang lebih baik
     """
-    # Mapping nama kolom ke standar
-    column_mapping = {
-        # NIK/KTP
-        'nik': 'KTP', 'no ktp': 'KTP', 'ktp': 'KTP', 'no. ktp': 'KTP',
-        # Nama
-        'nama': 'NAMA', 'nama petani': 'NAMA', 'nama lengkap': 'NAMA',
-        # Desa
-        'desa': 'DESA', 'kelurahan': 'DESA', 'desa/kel': 'DESA',
-        # Poktan
-        'poktan': 'POKTAN', 'poktan (kelompok tani)': 'POKTAN', 'kelompok tani': 'POKTAN',
-        # Kios
-        'kios': 'KIOS', 'nama kios': 'KIOS', 'pengecer': 'KIOS',
-        # Komoditas (G, H, I)
-        'komoditas': 'KOMODITAS_G', 'jenis tanaman': 'KOMODITAS_G',
-        'komoditas1': 'KOMODITAS_G', 'komoditas2': 'KOMODITAS_H', 'komoditas3': 'KOMODITAS_I',
+    if df.empty:
+        return df
+    
+    # Buat mapping lowercase untuk pencarian
+    column_mapping = {}
+    
+    # Mapping komprehensif untuk berbagai variasi nama kolom
+    mappings = {
+        'KTP': ['nik', 'no ktp', 'ktp', 'no. ktp', 'nomor ktp', 'ktp/nik', 'nik/ktp'],
+        'NAMA': ['nama', 'nama petani', 'nama lengkap', 'nama petani', 'nama farmer'],
+        'DESA': ['desa', 'kelurahan', 'desa/kel', 'desa/kelurahan', 'alamat'],
+        'POKTAN': ['poktan', 'poktan (kelompok tani)', 'kelompok tani', 'nama poktan', 'poktan'],
+        'KIOS': ['kios', 'nama kios', 'pengecer', 'nama pengecer', 'kios/pengecer'],
+        'KOMODITAS_G': ['komoditas', 'jenis tanaman', 'komoditas1', 'tanaman'],
+        'KOMODITAS_H': ['komoditas2', 'jenis tanaman 2'],
+        'KOMODITAS_I': ['komoditas3', 'jenis tanaman 3'],
     }
     
-    # Rename kolom berdasarkan mapping
+    # Create reverse mapping
+    for standard_name, variants in mappings.items():
+        for variant in variants:
+            column_mapping[variant] = standard_name
+    
+    # Rename columns
     new_columns = []
     for col in df.columns:
+        if pd.isna(col):
+            new_columns.append('UNNAMED')
+            continue
+            
         col_lower = str(col).lower().strip()
+        
         if col_lower in column_mapping:
             new_columns.append(column_mapping[col_lower])
         else:
-            # Coba cari partial match
+            # Cari partial match
             found = False
-            for key in column_mapping:
-                if key in col_lower:
-                    new_columns.append(column_mapping[key])
+            for variant, standard in column_mapping.items():
+                if variant in col_lower:
+                    new_columns.append(standard)
                     found = True
                     break
             if not found:
                 new_columns.append(col)
     
     df.columns = new_columns
+    
+    # Hapus kolom duplikat jika ada
+    df = df.loc[:, ~df.columns.duplicated()]
     
     return df
 
@@ -428,6 +314,9 @@ def send_email_notification(subject, message, is_success=True):
 # ============================
 # PROSES UTAMA
 # ============================
+# ============================
+# PROSES UTAMA
+# ============================
 def main():
     try:
         log = []
@@ -438,7 +327,7 @@ def main():
         nik_cleaning_log = []
 
         print("=" * 60)
-        print("🔍 MEMULAI PROSES REKAP DATA ERDKK")
+        print("🔍 MEMULAI PROSES REKAP DATA ERDKK - VERSI WEB")
         print("=" * 60)
         print(f"📁 Folder ID: {FOLDER_ID}")
         print(f"📊 Spreadsheet ID: {SPREADSHEET_ID}")
@@ -459,6 +348,8 @@ def main():
             try:
                 # Baca file Excel
                 df = pd.read_excel(fpath, dtype=str)
+                print(f"   📊 Kolom yang ditemukan: {list(df.columns)}")
+                
             except Exception as e:
                 print(f"   ❌ Gagal membaca file: {str(e)}")
                 log.append(f"- {filename}: GAGAL DIBACA - {str(e)}")
@@ -466,29 +357,50 @@ def main():
 
             # Standarisasi kolom
             df = standardize_columns(df)
+            print(f"   🔧 Kolom setelah standarisasi: {list(df.columns)}")
             
-            # Bersihkan NIK/KTP
+            # Cek apakah kolom KTP ada
             if 'KTP' in df.columns:
                 original_count = len(df)
-                df['KTP_ORIGINAL'] = df['KTP']
+                
+                # Simpan original KTP dengan cara yang benar
+                if 'KTP_ORIGINAL' in df.columns:
+                    # Jika kolom sudah ada, rename dulu
+                    df = df.rename(columns={'KTP_ORIGINAL': 'KTP_ORIGINAL_TEMP'})
+                
+                # Simpan nilai original sebelum cleaning
+                df['KTP_ORIGINAL'] = df['KTP'].copy()
+                
+                # Bersihkan NIK/KTP
                 df['KTP'] = df['KTP'].apply(clean_nik)
                 
                 # Log perubahan NIK
-                cleaned_ktp = df[df['KTP_ORIGINAL'] != df['KTP']][['KTP_ORIGINAL', 'KTP']]
-                for _, row in cleaned_ktp.iterrows():
-                    nik_cleaning_log.append(f"'{row['KTP_ORIGINAL']}' -> {row['KTP']}")
+                mask = df['KTP_ORIGINAL'] != df['KTP']
+                if mask.any():
+                    cleaned_ktp = df[mask][['KTP_ORIGINAL', 'KTP']].head(5)  # Ambil 5 contoh saja
+                    for _, row in cleaned_ktp.iterrows():
+                        nik_cleaning_log.append(f"'{row['KTP_ORIGINAL']}' -> {row['KTP']}")
                 
                 # Hapus baris dengan NIK kosong
+                before_clean = len(df)
                 df = df[df['KTP'].notna()]
-                cleaned_count = len(df)
+                after_clean = len(df)
                 
                 total_rows_original += original_count
-                total_rows_cleaned += cleaned_count
+                total_rows_cleaned += after_clean
                 
-                log.append(f"- {filename}: {original_count} -> {cleaned_count} baris")
+                dropped_count = before_clean - after_clean
+                if dropped_count > 0:
+                    log.append(f"- {filename}: {original_count} → {after_clean} baris ({dropped_count} NIK kosong dihapus)")
+                else:
+                    log.append(f"- {filename}: {original_count} baris (semua NIK valid)")
+                
+                # Tambahkan kolom nama file untuk tracking
+                df['FILE_SOURCE'] = filename
+                
                 all_dataframes.append(df)
                 
-                print(f"   ✅ Berhasil: {original_count} → {cleaned_count} baris")
+                print(f"   ✅ Berhasil: {original_count} → {after_clean} baris")
             else:
                 print(f"   ⚠️  Kolom KTP/NIK tidak ditemukan dalam file")
                 log.append(f"- {filename}: KOLOM KTP/NIK TIDAK DITEMUKAN")
@@ -499,11 +411,14 @@ def main():
             raise ValueError("❌ Tidak ada data yang berhasil diproses dari semua file")
 
         # 3. Proses dan gabungkan data (mirip VBA)
-        print("🔄 Menggabungkan data berdasarkan NIK dan Poktan (mirip VBA)...")
+        print(f"🔄 Menggabungkan {len(all_dataframes)} file data...")
         hasil_gabungan = proses_data_gabungan(all_dataframes)
         
-        print(f"✅ Data berhasil digabung: {len(hasil_gabungan) - 1} baris hasil (termasuk header)")
-        print(f"   Header: {len(hasil_gabungan[0])} kolom")
+        if len(hasil_gabungan) < 2:  # Hanya header, tidak ada data
+            raise ValueError("❌ Tidak ada data yang berhasil digabungkan")
+        
+        print(f"✅ Data berhasil digabung: {len(hasil_gabungan) - 1} baris hasil")
+        print(f"   📋 Header: {hasil_gabungan[0]}")
 
         # 4. Konversi ke DataFrame untuk penulisan
         header = hasil_gabungan[0]
@@ -516,7 +431,12 @@ def main():
         print("📤 MENULIS DATA KE GOOGLE SHEETS")
         print("=" * 60)
         
-        sh = gc.open_by_key(SPREADSHEET_ID)
+        # Buka spreadsheet
+        try:
+            sh = gc.open_by_key(SPREADSHEET_ID)
+            print(f"✅ Spreadsheet ditemukan: {SPREADSHEET_ID}")
+        except Exception as e:
+            raise ValueError(f"❌ Gagal membuka spreadsheet: {str(e)}")
         
         # Cek atau buat worksheet
         try:
@@ -530,9 +450,14 @@ def main():
                 cols=len(df_hasil.columns)
             )
             print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat")
+        except Exception as e:
+            raise ValueError(f"❌ Gagal mengakses worksheet: {str(e)}")
         
         # Tulis data
-        write_to_google_sheet(ws, hasil_gabungan)
+        success = write_to_google_sheet(ws, hasil_gabungan)
+        
+        if not success:
+            raise ValueError("❌ Gagal menulis data ke Google Sheets")
 
         # 6. Buat laporan sukses
         print()
@@ -545,18 +470,18 @@ def main():
 REKAP DATA ERDKK BERHASIL DIPROSES ✓
 
 📅 Tanggal Proses: {now}
-📁 Jumlah Kecamatan: {file_count}
+📁 Jumlah File: {file_count}
 📊 Total Data Awal: {total_rows_original} baris
 🧹 Data Setelah Cleaning: {total_rows_cleaned} baris
 📈 Hasil Gabungan: {len(df_hasil)} baris
 🏢 Unique NIK-Poktan: {len(df_hasil)}
 
-📋 DETAIL KECAMATAN:
+📋 DETAIL FILE:
 {chr(10).join(log)}
 
-🔍 CONTOH NIK YANG DIBERSIHKAN (5 pertama):
+🔍 CONTOH NIK YANG DIBERSIHKAN ({min(5, len(nik_cleaning_log))} pertama):
 {chr(10).join(nik_cleaning_log[:5])}
-{"... (masih ada " + str(len(nik_cleaning_log) - 5) + " entri lainnya)" if len(nik_cleaning_log) > 5 else ""}
+{"... (masih ada " + str(len(nik_cleaning_log) - 5) + " entri lainnya)" if len(nik_cleaning_log) > 5 else "Tidak ada NIK yang dibersihkan"}
 
 ✅ DATA TELAH BERHASIL DIUPLOAD:
 📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
@@ -564,21 +489,27 @@ REKAP DATA ERDKK BERHASIL DIPROSES ✓
 📈 Baris Data: {len(df_hasil)}
 📊 Kolom Data: {len(df_hasil.columns)}
 
-🔧 FITUR YANG DITERAPKAN (mirip VBA):
+🔧 FITUR YANG DITERAPKAN:
 1. Penggabungan berdasarkan NIK, Nama, Desa, Poktan, Kios
-2. Penggabungan komoditas tanpa duplikat (kolom G,H,I)
+2. Penggabungan komoditas tanpa duplikat
 3. Penjumlahan nilai numerik untuk data duplikat
 4. Format NIK sebagai teks
 5. Standarisasi nama kolom
 
-📍 REPOSITORY: proses-erdkk-python
+📍 REPOSITORY: {os.environ.get('GITHUB_REPOSITORY', 'verval-pupuk2')}
+🔄 WORKFLOW RUN: {os.environ.get('GITHUB_RUN_ID', 'N/A')}
 """
 
-        print(f"📊 Ringkasan: {now}, Kecamatan: {file_count}, Data: {len(df_hasil)} baris")
+        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {len(df_hasil)} baris")
 
         # 7. Kirim email notifikasi sukses
         print("📧 Mengirim notifikasi email...")
-        send_email_notification("REKAP DATA ERDKK BERHASIL", success_message, is_success=True)
+        email_sent = send_email_notification("REKAP DATA ERDKK BERHASIL", success_message, is_success=True)
+        
+        if email_sent:
+            print("✅ Email notifikasi terkirim")
+        else:
+            print("⚠️  Gagal mengirim email notifikasi")
         
         print("\n" + "=" * 60)
         print("🎉 PROSES REKAP DATA ERDKK TELAH BERHASIL!")
@@ -592,13 +523,21 @@ REKAP DATA ERDKK GAGAL ❌
 
 📅 Tanggal Proses: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
 📍 Folder ID: {FOLDER_ID}
+📍 Repository: {os.environ.get('GITHUB_REPOSITORY', 'N/A')}
+🔄 Workflow Run: {os.environ.get('GITHUB_RUN_ID', 'N/A')}
 📊 Status: Gagal saat memproses data
 
 ⚠️ ERROR DETAILS:
 {str(e)}
 
-🔧 TRACEBACK:
-{traceback.format_exc()[:500]}... (truncated)
+🔧 TROUBLESHOOTING:
+1. Periksa apakah file Excel memiliki format yang konsisten
+2. Pastikan kolom 'KTP' atau 'NIK' ada di semua file
+3. Cek struktur data di folder Google Drive
+4. Verifikasi akses Service Account
+
+🔧 TRACEBACK (simplified):
+{str(e.__class__.__name__)}: {str(e)}
 """
         print("\n" + "=" * 60)
         print("❌ PROSES GAGAL")
@@ -606,7 +545,12 @@ REKAP DATA ERDKK GAGAL ❌
         print(error_message)
 
         # Kirim email notifikasi error
-        send_email_notification("REKAP DATA ERDKK GAGAL", error_message, is_success=False)
+        try:
+            send_email_notification("REKAP DATA ERDKK GAGAL", error_message, is_success=False)
+            print("📧 Notifikasi email error terkirim")
+        except Exception as email_error:
+            print(f"⚠️  Gagal mengirim email error: {str(email_error)}")
+        
         return False
 
 # ============================
