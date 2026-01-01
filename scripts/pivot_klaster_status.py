@@ -146,72 +146,71 @@ def send_email_notification(subject, message, is_success=True):
 # ============================
 def klasifikasikan_status(status_value):
     """
-    Versi sederhana: Abaikan kurung, fokus pada status utama
+    Klasifikasi status dengan mengabaikan konten dalam kurung
     """
     if pd.isna(status_value) or status_value is None:
         return "TANPA_STATUS"
     
-    status_str = str(status_value).lower()
+    status_str = str(status_value).lower().strip()
     
-    # **STEP 1: ABAIKAN TEKS DALAM KURUNG**
-    # Cari dan hapus teks dalam kurung apapun
-    bracket_start = status_str.find('(')
-    if bracket_start != -1:
-        bracket_end = status_str.find(')', bracket_start)
-        if bracket_end != -1:
-            # Hapus teks dari '(' sampai ')'
-            main_status = status_str[:bracket_start] + status_str[bracket_end+1:]
-        else:
-            # Hanya ada '(' tanpa ')', hapus dari '(' sampai akhir
-            main_status = status_str[:bracket_start]
+    # **PENTING: Hapus semua konten dalam kurung dari pengecekan**
+    # Cari dan hapus teks dalam kurung
+    bracket_pos = status_str.find('(')
+    
+    if bracket_pos != -1:
+        # Ambil HANYA teks sebelum kurung buka pertama
+        status_for_check = status_str[:bracket_pos].strip()
     else:
-        main_status = status_str
+        status_for_check = status_str
     
-    # Bersihkan spasi ganda
-    main_status = ' '.join(main_status.split())
+    # **LOGIKA KLASIFIKASI: HANYA gunakan teks tanpa kurung**
     
-    # **STEP 2: KLASIFIKASI BERDASARKAN STATUS UTAMA**
-    
-    # Kasus 1: MENUNGGU (hanya jika tidak ada "disetujui" di status utama)
-    if 'menunggu' in main_status and 'disetujui' not in main_status:
-        if 'kecamatan' in main_status:
+    # 1. Cek MENUNGGU (hanya jika di status utama tanpa kurung)
+    if 'menunggu' in status_for_check:
+        if 'kecamatan' in status_for_check:
             return "MENUNGGU_KEC"
-        elif 'pusat' in main_status:
+        elif 'pusat' in status_for_check:
             return "MENUNGGU_PUSAT"
+        else:
+            return "MENUNGGU_LAIN"
     
-    # Kasus 2: DISETUJUI
-    if 'disetujui' in main_status:
-        if 'pusat' in main_status:
+    # 2. Cek DISETUJUI
+    elif 'disetujui' in status_for_check:
+        if 'pusat' in status_for_check:
             return "DISETUJUI_PUSAT"
-        elif 'kecamatan' in main_status:
+        elif 'kecamatan' in status_for_check:
+            return "DISETUJUI_KEC"
+        else:
+            return "DISETUJUI_LAIN"
+    
+    # 3. Cek DITOLAK
+    elif 'ditolak' in status_for_check:
+        if 'pusat' in status_for_check:
+            return "DITOLAK_PUSAT"
+        elif 'kecamatan' in status_for_check:
+            return "DITOLAK_KEC"
+        else:
+            return "DITOLAK_LAIN"
+    
+    # 4. FALLBACK: Cek string lengkap (hanya untuk edge cases)
+    # Prioritas: DISETUJUI > DITOLAK > MENUNGGU
+    if 'disetujui' in status_str:
+        if 'pusat' in status_str:
+            return "DISETUJUI_PUSAT"
+        elif 'kecamatan' in status_str:
             return "DISETUJUI_KEC"
     
-    # Kasus 3: DITOLAK
-    if 'ditolak' in main_status:
-        if 'pusat' in main_status:
+    if 'ditolak' in status_str:
+        if 'pusat' in status_str:
             return "DITOLAK_PUSAT"
-        elif 'kecamatan' in main_status:
+        elif 'kecamatan' in status_str:
             return "DITOLAK_KEC"
     
-    # **STEP 3: FALLBACK - cek string asli jika tidak match**
-    if 'menunggu' in status_str and 'kecamatan' in status_str:
-        return "MENUNGGU_KEC"
-    if 'disetujui' in status_str and 'kecamatan' in status_str:
-        return "DISETUJUI_KEC"
-    if 'disetujui' in status_str and 'pusat' in status_str:
-        return "DISETUJUI_PUSAT"
-    if 'ditolak' in status_str and 'kecamatan' in status_str:
-        return "DITOLAK_KEC"
-    if 'ditolak' in status_str and 'pusat' in status_str:
-        return "DITOLAK_PUSAT"
-    
-    # **STEP 4: DEFAULT**
     if 'menunggu' in status_str:
-        return "MENUNGGU_LAIN"
-    if 'disetujui' in status_str:
-        return "DISETUJUI_LAIN"
-    if 'ditolak' in status_str:
-        return "DITOLAK_LAIN"
+        if 'kecamatan' in status_str:
+            return "MENUNGGU_KEC"
+        elif 'pusat' in status_str:
+            return "MENUNGGU_PUSAT"
     
     return "LAINNYA"
 
