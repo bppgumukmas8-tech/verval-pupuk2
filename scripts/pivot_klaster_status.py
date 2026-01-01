@@ -142,28 +142,32 @@ def send_email_notification(subject, message, is_success=True):
         return False
 
 # ============================
-# FUNGSI KLASIFIKASI STATUS
+# FUNGSI KLASIFIKASI STATUS - VERSI DIPERBAIKI
 # ============================
 def klasifikasikan_status(status_value):
     """
-    Klasifikasi status dengan mengabaikan konten dalam kurung
+    Klasifikasi status dengan mengabaikan konten dalam kurung - VERSI FIXED
     """
     if pd.isna(status_value) or status_value is None:
         return "TANPA_STATUS"
     
     status_str = str(status_value).lower().strip()
     
-    # **PENTING: Hapus semua konten dalam kurung dari pengecekan**
-    # Cari dan hapus teks dalam kurung
-    bracket_pos = status_str.find('(')
+    # **HAPUS SEMUA KONTEN DALAM KURUNG** (termasuk kurung itu sendiri)
+    # Gunakan regex untuk menghapus semua kurung: (), [], {}
+    import re
     
-    if bracket_pos != -1:
-        # Ambil HANYA teks sebelum kurung buka pertama
-        status_for_check = status_str[:bracket_pos].strip()
-    else:
-        status_for_check = status_str
+    # Hapus teks dalam kurung biasa
+    status_no_brackets = re.sub(r'\(.*?\)', '', status_str)
+    # Hapus spasi berlebihan
+    status_no_brackets = re.sub(r'\s+', ' ', status_no_brackets).strip()
     
-    # **LOGIKA KLASIFIKASI: HANYA gunakan teks tanpa kurung**
+    # Jika setelah hapus kurung jadi kosong, gunakan string asli
+    if not status_no_brackets:
+        status_no_brackets = status_str
+    
+    # **KLASIFIKASI BERDASARKAN TEKS TANPA KURUNG**
+    status_for_check = status_no_brackets
     
     # 1. Cek MENUNGGU (hanya jika di status utama tanpa kurung)
     if 'menunggu' in status_for_check:
@@ -192,27 +196,9 @@ def klasifikasikan_status(status_value):
         else:
             return "DITOLAK_LAIN"
     
-    # 4. FALLBACK: Cek string lengkap (hanya untuk edge cases)
-    # Prioritas: DISETUJUI > DITOLAK > MENUNGGU
-    if 'disetujui' in status_str:
-        if 'pusat' in status_str:
-            return "DISETUJUI_PUSAT"
-        elif 'kecamatan' in status_str:
-            return "DISETUJUI_KEC"
-    
-    if 'ditolak' in status_str:
-        if 'pusat' in status_str:
-            return "DITOLAK_PUSAT"
-        elif 'kecamatan' in status_str:
-            return "DITOLAK_KEC"
-    
-    if 'menunggu' in status_str:
-        if 'kecamatan' in status_str:
-            return "MENUNGGU_KEC"
-        elif 'pusat' in status_str:
-            return "MENUNGGU_PUSAT"
-    
-    return "LAINNYA"
+    # 4. LAINNYA
+    else:
+        return "LAINNYA"
 
 def get_klaster_display_name(klaster):
     """
@@ -228,7 +214,8 @@ def get_klaster_display_name(klaster):
         "DITOLAK_LAIN": "Tolak_Lain",
         "MENUNGGU_LAIN": "Menunggu_Lain",
         "DISETUJUI_LAIN": "Setuju_Lain",
-        "TANPA_STATUS": "No_Status"
+        "TANPA_STATUS": "No_Status",
+        "LAINNYA": "Lainnya"
     }
     return mapping.get(klaster, klaster)
 
@@ -268,11 +255,9 @@ def extract_latest_input_date_from_files(excel_files):
                 found_in_files += 1
                 
                 # Konversi ke datetime dan cari nilai yang valid
-                # Coba beberapa format tanggal yang mungkin
                 try:
                     df[tgl_col] = pd.to_datetime(df[tgl_col], errors='coerce', dayfirst=True)
                 except:
-                    # Jika gagal, coba format lain
                     try:
                         df[tgl_col] = pd.to_datetime(df[tgl_col], errors='coerce', format='%d/%m/%Y %H:%M:%S')
                     except:
@@ -290,14 +275,11 @@ def extract_latest_input_date_from_files(excel_files):
                 valid_datetimes = df[tgl_col].dropna()
                 
                 if not valid_datetimes.empty:
-                    # Cari datetime terbaru dalam file ini
                     file_latest_datetime = valid_datetimes.max()
                     
-                    # Update datetime terbaru secara keseluruhan
                     if latest_datetime is None or file_latest_datetime > latest_datetime:
                         latest_datetime = file_latest_datetime
                     
-                    # Format untuk display
                     date_str = file_latest_datetime.strftime('%d %b %Y')
                     time_str = file_latest_datetime.strftime('%H:%M:%S') if pd.notna(file_latest_datetime) else "00:00:00"
                     print(f"   ✅ {file_name}: Ditemukan {len(valid_datetimes)} data TGL INPUT, terbaru: {date_str} {time_str}")
@@ -323,17 +305,10 @@ def format_date_indonesian(date_obj):
     """
     Format tanggal Indonesia dengan bulan singkat (dd mmm yyyy)
     Contoh: 12 Des 2025
-    
-    Parameters:
-    - date_obj: datetime.date object
-    
-    Returns:
-    - String dalam format "dd mmm yyyy"
     """
     if not date_obj:
         return "Tidak tersedia"
     
-    # Mapping bulan Indonesia singkat
     bulan_singkat = {
         1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 
         5: "Mei", 6: "Jun", 7: "Jul", 8: "Agu",
@@ -349,36 +324,22 @@ def format_date_indonesian(date_obj):
 def format_date_for_sheet(date_obj):
     """
     Format tanggal untuk ditampilkan di sheet (dd mmm yyyy)
-    
-    Parameters:
-    - date_obj: datetime.date object
-    
-    Returns:
-    - String dalam format "dd mmm yyyy" (contoh: "12 Des 2025")
     """
     return format_date_indonesian(date_obj)
 
 def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
     """
     Menulis tanggal dan waktu update ke Sheet1 pada cell E1, E2, dan E3
-    
-    Parameters:
-    - gc: gspread client
-    - spreadsheet_url: URL spreadsheet tujuan
-    - latest_datetime: Datetime terbaru dalam format datetime.datetime
     """
     try:
         print(f"📝 Menulis tanggal dan waktu update ke Sheet1...")
         
-        # Buka spreadsheet
         spreadsheet = safe_google_api_operation(gc.open_by_url, spreadsheet_url)
         
-        # Cek apakah Sheet1 ada
         try:
             worksheet = safe_google_api_operation(spreadsheet.worksheet, "Sheet1")
             print("   ✅ Sheet1 ditemukan")
         except gspread.exceptions.WorksheetNotFound:
-            # Buat Sheet1 jika tidak ada
             print("   📄 Sheet1 tidak ditemukan, membuat baru...")
             worksheet = safe_google_api_operation(
                 spreadsheet.add_worksheet,
@@ -387,17 +348,14 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
                 cols="20"
             )
         
-        # Bersihkan cell E1, E2, dan E3 sebelum menulis
         safe_google_api_operation(worksheet.update, 'E1', [['']])
         safe_google_api_operation(worksheet.update, 'E2', [['']])
         safe_google_api_operation(worksheet.update, 'E3', [['']])
         time.sleep(WRITE_DELAY)
         
-        # Tulis data ke cell E1, E2, dan E3
         safe_google_api_operation(worksheet.update, 'E1', [['Update per tanggal input']])
         time.sleep(WRITE_DELAY)
         
-        # Format tanggal untuk E2
         if latest_datetime:
             date_formatted = format_date_for_sheet(latest_datetime.date())
         else:
@@ -406,7 +364,6 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
         safe_google_api_operation(worksheet.update, 'E2', [[date_formatted]])
         time.sleep(WRITE_DELAY)
         
-        # Format jam untuk E3
         if latest_datetime:
             time_formatted = latest_datetime.strftime('%H:%M:%S') if pd.notna(latest_datetime) else "00:00:00"
         else:
@@ -414,14 +371,12 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
         
         safe_google_api_operation(worksheet.update, 'E3', [[time_formatted]])
         
-        # Format header (cell E1)
         worksheet.format('E1:E1', {
             "textFormat": {"bold": True, "fontSize": 11},
             "horizontalAlignment": "CENTER",
             "verticalAlignment": "MIDDLE"
         })
         
-        # Format tanggal (cell E2)
         worksheet.format('E2:E2', {
             "textFormat": {"bold": True, "fontSize": 12},
             "horizontalAlignment": "CENTER",
@@ -429,7 +384,6 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
             "backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}
         })
         
-        # Format jam (cell E3)
         worksheet.format('E3:E3', {
             "textFormat": {"bold": True, "fontSize": 12},
             "horizontalAlignment": "CENTER",
@@ -437,7 +391,6 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
             "backgroundColor": {"red": 0.92, "green": 0.92, "blue": 0.92}
         })
         
-        # Atur tinggi baris untuk E1, E2, dan E3
         worksheet.format('E1:E3', {
             "wrapStrategy": "WRAP"
         })
@@ -515,10 +468,9 @@ def add_total_row(df, pupuk_columns):
     df_with_total = df.copy()
     
     total_row = {col: df[col].sum() for col in pupuk_columns}
-    first_col = df.columns[0]  # Biasanya 'KECAMATAN'
+    first_col = df.columns[0]
     total_row[first_col] = "TOTAL"
     
-    # Isi kolom lainnya dengan string kosong
     for col in df.columns:
         if col not in pupuk_columns and col != first_col:
             total_row[col] = ""
@@ -534,20 +486,16 @@ def add_total_row_with_kios(df, pupuk_columns):
     """
     df_with_total = df.copy()
     
-    # Buat baris total
     total_row = {col: df[col].sum() for col in pupuk_columns}
     
-    # Set kolom non-numerik
     total_row['KECAMATAN'] = "TOTAL"
-    total_row['KODE KIOS'] = ""  # Kosong untuk KODE KIOS
-    total_row['NAMA KIOS'] = ""  # Kosong untuk NAMA KIOS
+    total_row['KODE KIOS'] = ""
+    total_row['NAMA KIOS'] = ""
     
-    # Isi kolom lainnya dengan string kosong
     for col in df.columns:
         if col not in pupuk_columns and col not in ['KECAMATAN', 'KODE KIOS', 'NAMA KIOS']:
             total_row[col] = ""
     
-    # Tambahkan baris total
     total_df = pd.DataFrame([total_row])
     df_with_total = pd.concat([df_with_total, total_df], ignore_index=True)
     
@@ -561,10 +509,7 @@ def apply_header_format(gc, spreadsheet_url, sheet_name):
         spreadsheet = safe_google_api_operation(gc.open_by_url, spreadsheet_url)
         worksheet = spreadsheet.worksheet(sheet_name)
         
-        # Format baris pertama (header)
         worksheet.format('A1:Z1', HEADER_FORMAT)
-        
-        # Auto-resize kolom
         worksheet.columns_auto_resize(0, 20)
         
         print(f"   🎨 Format header diterapkan pada {sheet_name}")
@@ -583,7 +528,6 @@ def download_excel_files_from_drive(credentials, folder_id, save_folder="data_ex
     os.makedirs(save_folder, exist_ok=True)
     drive_service = build('drive', 'v3', credentials=credentials)
 
-    # Query untuk mencari file Excel
     query = f"'{folder_id}' in parents and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel')"
     results = drive_service.files().list(q=query, fields="files(id, name)").execute()
     files = results.get("files", [])
@@ -596,7 +540,6 @@ def download_excel_files_from_drive(credentials, folder_id, save_folder="data_ex
         print(f"📥 Downloading: {file['name']}")
         request = drive_service.files().get_media(fileId=file["id"])
         
-        # Gunakan nama file yang aman
         safe_filename = "".join(c for c in file['name'] if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
         file_path = os.path.join(save_folder, safe_filename)
 
@@ -621,38 +564,29 @@ def download_excel_files_from_drive(credentials, folder_id, save_folder="data_ex
 def create_pivot_klaster(df, numeric_columns, pivot_type='kecamatan'):
     """
     Membuat pivot berdasarkan klaster status
-    
-    Parameters:
-    - df: DataFrame
-    - numeric_columns: kolom numerik yang akan dijumlahkan
-    - pivot_type: 'kecamatan' atau 'kios'
-    
-    Returns:
-    - Dictionary dengan klaster sebagai key dan pivot DataFrame sebagai value
     """
     pivots = {}
     
-    # Tambah kolom KLASIFIKASI_STATUS
-    df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
+    # Pastikan kolom KLASIFIKASI_STATUS sudah ada
+    if 'KLASIFIKASI_STATUS' not in df.columns:
+        print("   ⚠️  Kolom KLASIFIKASI_STATUS tidak ditemukan, membuat baru...")
+        df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
     
     # Kelompokkan berdasarkan klaster
     for klaster in df['KLASIFIKASI_STATUS'].unique():
         df_klaster = df[df['KLASIFIKASI_STATUS'] == klaster].copy()
         
+        print(f"   📊 Klaster '{klaster}': {len(df_klaster)} baris")
+        
         if pivot_type == 'kecamatan':
-            # Group by KECAMATAN
             pivot = df_klaster.groupby('KECAMATAN')[numeric_columns].sum().reset_index()
             pivot = add_total_row(pivot, numeric_columns)
             
         elif pivot_type == 'kios':
-            # Group by KECAMATAN, KODE KIOS, NAMA KIOS
             pivot = df_klaster.groupby(['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'])[numeric_columns].sum().reset_index()
-            
-            # Urutkan kolom sesuai kebutuhan: KODE KIOS sebelum NAMA KIOS
             pivot = pivot[['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'] + numeric_columns]
             pivot = add_total_row_with_kios(pivot, numeric_columns)
         
-        # Format numerik
         for col in numeric_columns:
             if col in pivot.columns:
                 pivot[col] = pivot[col].round(2)
@@ -664,41 +598,16 @@ def create_pivot_klaster(df, numeric_columns, pivot_type='kecamatan'):
 def process_and_upload_pivots(gc, df, numeric_columns, spreadsheet_url, pivot_type, latest_datetime=None):
     """
     Memproses dan mengupload pivot ke Google Sheets
-    
-    Parameters:
-    - gc: gspread client
-    - df: DataFrame utama
-    - numeric_columns: kolom numerik
-    - spreadsheet_url: URL spreadsheet tujuan
-    - pivot_type: 'kecamatan' atau 'kios'
-    - latest_datetime: Datetime input terbaru untuk ditulis di Sheet1
     """
     print(f"\n📊 Membuat pivot {pivot_type} berdasarkan klaster status...")
     
-    # Buat pivot berdasarkan klaster
     pivots = create_pivot_klaster(df, numeric_columns, pivot_type)
     
-    # Buka spreadsheet
     spreadsheet = safe_google_api_operation(gc.open_by_url, spreadsheet_url)
     
-    # Tulis tanggal update ke Sheet1 jika ada tanggal
     if latest_datetime:
         write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime)
     
-    # Hapus semua sheet kecuali Sheet1
-    existing_sheets = safe_google_api_operation(spreadsheet.worksheets)
-    sheets_to_delete = [sheet for sheet in existing_sheets if sheet.title != "Sheet1"]
-    
-    if sheets_to_delete:
-        for sheet in sheets_to_delete:
-            try:
-                safe_google_api_operation(spreadsheet.del_worksheet, sheet)
-                print(f"   🗑️  Menghapus sheet: {sheet.title}")
-                time.sleep(WRITE_DELAY)
-            except Exception as e:
-                print(f"   ⚠️  Gagal menghapus {sheet.title}: {str(e)}")
-    
-    # Upload setiap klaster
     sheet_count = 0
     for klaster, pivot_df in pivots.items():
         sheet_name = get_klaster_display_name(klaster)
@@ -707,7 +616,6 @@ def process_and_upload_pivots(gc, df, numeric_columns, spreadsheet_url, pivot_ty
         print(f"   📝 {sheet_name}: {row_count-1} baris data + 1 total")
         
         try:
-            # Buat worksheet baru
             worksheet = safe_google_api_operation(
                 spreadsheet.add_worksheet, 
                 title=sheet_name, 
@@ -715,7 +623,6 @@ def process_and_upload_pivots(gc, df, numeric_columns, spreadsheet_url, pivot_ty
                 cols=str(len(pivot_df.columns) + 5)
             )
             
-            # Upload data
             safe_google_api_operation(worksheet.clear)
             time.sleep(WRITE_DELAY)
             
@@ -724,7 +631,6 @@ def process_and_upload_pivots(gc, df, numeric_columns, spreadsheet_url, pivot_ty
                 [pivot_df.columns.values.tolist()] + pivot_df.values.tolist()
             )
             
-            # Terapkan format header
             time.sleep(WRITE_DELAY)
             apply_header_format(gc, spreadsheet_url, sheet_name)
             
@@ -743,10 +649,9 @@ def analyze_status_distribution(df):
     """
     print("\n📈 ANALISIS DISTRIBUSI STATUS:")
     
-    # Tambah kolom klasifikasi
-    df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
+    if 'KLASIFIKASI_STATUS' not in df.columns:
+        df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
     
-    # Hitung distribusi
     status_counts = df['KLASIFIKASI_STATUS'].value_counts()
     total_data = len(df)
     
@@ -773,10 +678,9 @@ def process_verval_pupuk_by_klaster():
     print("=" * 60)
 
     try:
-        # ========== LOAD CREDENTIALS ==========
         creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
         if not creds_json:
-            raise ValueError("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON tidak ditemukan di environment variables")
+            raise ValueError("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON tidak ditemukan")
 
         credentials = Credentials.from_service_account_info(
             json.loads(creds_json),
@@ -788,14 +692,11 @@ def process_verval_pupuk_by_klaster():
 
         gc = gspread.authorize(credentials)
 
-        # Download files dari Google Drive
         excel_files = download_excel_files_from_drive(credentials, FOLDER_ID)
         print(f"📁 Ditemukan {len(excel_files)} file Excel")
 
-        # EKSTRAK TANGGAL INPUT TERBARU
         latest_datetime, files_with_date = extract_latest_input_date_from_files(excel_files)
         
-        # Konfigurasi kolom
         expected_columns = ['KECAMATAN', 'NO TRANSAKSI', 'KODE KIOS', 'NAMA KIOS', 'NIK', 'NAMA PETANI',
                           'UREA', 'NPK', 'SP36', 'ZA', 'NPK FORMULA', 'ORGANIK', 'ORGANIK CAIR',
                           'TGL TEBUS', 'STATUS']
@@ -804,7 +705,6 @@ def process_verval_pupuk_by_klaster():
 
         all_data = []
 
-        # Proses setiap file
         for file_info in excel_files:
             file_path = file_info['path']
             file_name = file_info['name']
@@ -814,17 +714,14 @@ def process_verval_pupuk_by_klaster():
             try:
                 df = pd.read_excel(file_path, sheet_name='Worksheet')
 
-                # Cek kolom yang ada
                 missing_columns = [col for col in expected_columns if col not in df.columns]
                 if missing_columns:
                     print(f"   ⚠️  Kolom yang tidak ditemukan: {missing_columns}")
                     continue
 
-                # Clean NIK
                 df['NIK'] = df['NIK'].apply(clean_nik)
                 df = df[df['NIK'].notna()]
 
-                # Konversi kolom pupuk ke numerik
                 for col in pupuk_columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
@@ -841,37 +738,49 @@ def process_verval_pupuk_by_klaster():
             send_email_notification("REKAP KLASTER GAGAL", error_msg, is_success=False)
             return
 
-        # Gabungkan semua data
         combined_df = pd.concat(all_data, ignore_index=True)
         print(f"\n📊 Total data gabungan: {len(combined_df):,} baris")
-
-        # Analisis distribusi status
-        status_dist = analyze_status_distribution(combined_df)
-
-        # Proses dan upload pivot kecamatan (DENGAN TANGGAL UPDATE)
+        
+        print(f"\n🎯 MENERAPKAN KLASIFIKASI STATUS BARU...")
+        combined_df['KLASIFIKASI_STATUS'] = combined_df['STATUS'].apply(klasifikasikan_status)
+        
+        print(f"\n📈 DISTRIBUSI STATUS SETELAH KLASIFIKASI:")
+        status_counts = combined_df['KLASIFIKASI_STATUS'].value_counts()
+        for status, count in status_counts.items():
+            percentage = (count / len(combined_df)) * 100
+            print(f"   📌 {status}: {count:,} data ({percentage:.1f}%)")
+        
+        print(f"\n🗑️  MEMBERSIHKAN SHEET LAMA...")
+        
+        try:
+            kec_spreadsheet = safe_google_api_operation(gc.open_by_url, KECAMATAN_SHEET_URL)
+            kec_sheets = kec_spreadsheet.worksheets()
+            for sheet in kec_sheets:
+                if sheet.title != "Sheet1":
+                    safe_google_api_operation(kec_spreadsheet.del_worksheet, sheet)
+                    print(f"   ✅ Menghapus sheet: {sheet.title} dari Kecamatan")
+                    time.sleep(WRITE_DELAY)
+        except Exception as e:
+            print(f"   ⚠️  Gagal clear Kecamatan sheets: {str(e)}")
+        
+        try:
+            kios_spreadsheet = safe_google_api_operation(gc.open_by_url, KIOS_SHEET_URL)
+            kios_sheets = kios_spreadsheet.worksheets()
+            for sheet in kios_sheets:
+                if sheet.title != "Sheet1":
+                    safe_google_api_operation(kios_spreadsheet.del_worksheet, sheet)
+                    print(f"   ✅ Menghapus sheet: {sheet.title} dari Kios")
+                    time.sleep(WRITE_DELAY)
+        except Exception as e:
+            print(f"   ⚠️  Gagal clear Kios sheets: {str(e)}")
+        
         kecamatan_sheet_count = process_and_upload_pivots(
             gc, combined_df, pupuk_columns, KECAMATAN_SHEET_URL, 'kecamatan', latest_datetime
         )
 
-        # Proses dan upload pivot kios (DENGAN TANGGAL UPDATE)
         kios_sheet_count = process_and_upload_pivots(
             gc, combined_df, pupuk_columns, KIOS_SHEET_URL, 'kios', latest_datetime
         )
-
-        # Siapkan summary untuk email
-        status_summary = "\n".join([
-            f"   • {get_klaster_display_name(k)}: {v:,} data" 
-            for k, v in status_dist.items()
-        ])
-        
-        # Tambah info tanggal update
-        date_info = ""
-        if latest_datetime:
-            date_formatted_display = format_date_indonesian(latest_datetime.date())
-            time_formatted_display = latest_datetime.strftime('%H:%M:%S') if pd.notna(latest_datetime) else "00:00:00"
-            date_info = f"\n📅 INFORMASI TANGGAL & WAKTU:\n   • Tanggal input terbaru: {date_formatted_display}\n   • Jam input terbaru: {time_formatted_display}\n   • Format di sheet E2: '{date_formatted_display}'\n   • Format di sheet E3: '{time_formatted_display}'\n   • File dengan TGL INPUT: {files_with_date}/{len(excel_files)}"
-        else:
-            date_info = f"\n📅 INFORMASI TANGGAL & WAKTU:\n   • Tanggal input: Tidak ditemukan di file sumber\n   • Format di sheet E2: 'Tanggal tidak tersedia'\n   • Format di sheet E3: 'Waktu tidak tersedia'\n   • File dengan TGL INPUT: 0/{len(excel_files)}"
 
         success_message = f"""
 REKAP DATA BERDASARKAN KLASTER STATUS BERHASIL ✓
@@ -883,48 +792,27 @@ REKAP DATA BERDASARKAN KLASTER STATUS BERHASIL ✓
 • Sheet Kecamatan: {kecamatan_sheet_count} klaster
 • Sheet Kios: {kios_sheet_count} klaster
 
-{date_info}
-
 📋 DISTRIBUSI STATUS:
-{status_summary}
+"""
+        for status, count in status_counts.items():
+            percentage = (count / len(combined_df)) * 100
+            display_name = get_klaster_display_name(status)
+            success_message += f"• {display_name}: {count:,} data ({percentage:.1f}%)\n"
 
-🏢 STRUKTUR PIVOT:
-1. PER KECAMATAN:
-   • Kolom: KECAMATAN → Jenis Pupuk
-   • Setiap klaster jadi sheet terpisah
-   • Baris TOTAL di akhir setiap sheet
-   • Header berwarna biru dengan teks putih
-
-2. PER KIOS:
-   • Kolom: KECAMATAN → KODE KIOS → NAMA KIOS → Jenis Pupuk
-   • Setiap klaster jadi sheet terpisah
-   • Baris TOTAL di akhir setiap sheet
-   • Header berwarna biru dengan teks putih
-
-📍 INFO TANGGAL UPDATE:
-• Tanggal update ditampilkan di Sheet1 cell E1-E3
-• Cell E1: "Update per tanggal input"
-• Cell E2: Tanggal dalam format "dd mmm yyyy" (contoh: "12 Des 2025")
-• Cell E3: Jam dalam format "HH:MM:SS" (contoh: "14:30:45")
-• Format bold dengan background berbeda untuk E2 dan E3
+        success_message += f"""
+🎯 LOGIKA KLASIFIKASI BARU:
+• Mengabaikan konten dalam kurung untuk klasifikasi
+• "Disetujui tim verval kecamatan (menunggu...)" → DISETUJUI_KEC
+• "Menunggu verifikasi tim verval kecamatan" → MENUNGGU_KEC
 
 🔗 LINK HASIL:
 • Pivot Kecamatan: {KECAMATAN_SHEET_URL}
 • Pivot Kios: {KIOS_SHEET_URL}
-
-🎯 FITUR:
-✅ Pengelompokan otomatis berdasarkan status
-✅ Nama sheet singkat dan deskriptif
-✅ Baris TOTAL di setiap sheet
-✅ Format header profesional
-✅ File terpisah untuk kecamatan dan kios
-✅ Tampilan tanggal input terbaru di Sheet1
-✅ Format tanggal Indonesia (dd mmm yyyy)
 """
 
         send_email_notification("REKAP KLASTER BERHASIL", success_message, is_success=True)
         print("\n" + "=" * 60)
-        print("✅ PROSES SELESAI DENGAN SUKSES!")
+        print("✅ PROSES SELESAI DENGAN SUKSES! DATA DIPERBARUI.")
         print("=" * 60)
 
     except Exception as e:
