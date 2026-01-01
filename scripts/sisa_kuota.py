@@ -19,9 +19,9 @@ import tempfile
 # ============================
 # KONFIGURASI
 # ============================
-ERDKK_FOLDER_ID = "1BBgVsgq7EMGs0TLaO_4GEtUppznm1v5J"
-REALISASI_FOLDER_ID = "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn"
-OUTPUT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1GRo7BP1a2MdEjZEnUVVDQBqp7KuLOViRlxMOkL0ERJE/edit"
+ERDKK_FOLDER_ID = "13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ"
+REALISASI_FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"
+OUTPUT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1-UWjT-N5iRwFwpG-yVLiSxmyONn0VWoLESDPfchmDTk/edit"
 
 # ============================
 # EMAIL CONFIG (DARI SECRETS)
