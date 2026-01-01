@@ -1,9 +1,9 @@
 name: Update Nama Kecamatan & Desa Otomatis
 
 on:
- # Schedule bulanan: tiap tanggal 1 jam 11 malam WIB (16:00 UTC)
+ # Schedule bulanan: tiap tanggal 1 jam 10 malam WIB (15:00 UTC)
   schedule:
-    - cron: '0 16 1 * *'  # Setiap tanggal 1 jam 16:00 UTC
+    - cron: '0 15 1 * *'  # Setiap tanggal 1 jam 15:00 UTC
     
   # Manual trigger dengan input
   workflow_dispatch:
