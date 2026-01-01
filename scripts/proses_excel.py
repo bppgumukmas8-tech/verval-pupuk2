@@ -2,15 +2,14 @@ import os
 import io
 import pandas as pd
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload  # ✅ UBAH INI
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from google.oauth2 import service_account
 from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
-from collections import defaultdict
-import tempfile  # ✅ TAMBAH INI
+from collections import defaultdict   # ✅ BARU
 
 # ----------------------------------------------------
 # KONFIGURASI (TETAP)
@@ -91,7 +90,7 @@ def list_files_in_folder(folder_id):
     return result.get("files", [])
 
 # ----------------------------------------------------
-# PROSES EXCEL → RETURN DATAFRAME & BULAN (TETAP)
+# PROSES EXCEL → RETURN DATAFRAME & BULAN (MODIFIKASI)
 # ----------------------------------------------------
 
 def process_excel(file_id, file_name):
@@ -141,61 +140,7 @@ def process_excel(file_id, file_name):
     }
 
 # ----------------------------------------------------
-# FUNGSI UPLOAD BARU (Menggunakan MediaFileUpload)
-# ----------------------------------------------------
-
-def upload_excel_file(excel_data, filename, folder_id):
-    """
-    Upload file Excel menggunakan MediaFileUpload
-    (seperti script nama_kecamatan_desa.py yang berhasil)
-    """
-    temp_path = None
-    try:
-        # Simpan ke file temporary
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            tmp_file.write(excel_data.getvalue())
-            temp_path = tmp_file.name
-        
-        # Gunakan MediaFileUpload (seperti script berhasil)
-        media = MediaFileUpload(
-            temp_path,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            resumable=True
-        )
-        
-        # Cek apakah file sudah ada
-        existing = drive.files().list(
-            q=f"'{folder_id}' in parents and name='{filename}'",
-            fields="files(id)"
-        ).execute().get("files", [])
-        
-        if existing:
-            # Update file yang sudah ada
-            file = drive.files().update(
-                fileId=existing[0]["id"],
-                media_body=media
-            ).execute()
-            add_log(f"✅ Updated: {filename}")
-        else:
-            # Buat file baru
-            file = drive.files().create(
-                body={"name": filename, "parents": [folder_id]},
-                media_body=media
-            ).execute()
-            add_log(f"✅ Created: {filename}")
-        
-        return file.get('id')
-        
-    except Exception as e:
-        add_log(f"❌ Error uploading {filename}: {e}", is_error=True)
-        raise
-    finally:
-        # Hapus temporary file
-        if temp_path and os.path.exists(temp_path):
-            os.unlink(temp_path)
-
-# ----------------------------------------------------
-# MAIN (DIMODIFIKASI)
+# MAIN (DITAMBAH LOGIKA GABUNG BULAN)
 # ----------------------------------------------------
 
 def main():
@@ -231,22 +176,33 @@ def main():
 
         filename = f"{bulan}.xlsx"
 
-        # 3️⃣ UPLOAD FILE (dengan method yang terbukti berhasil)
-        try:
-            file_id = upload_excel_file(output, filename, FOLDER_ID)
-            
-            # 4️⃣ ARSIPKAN SEMUA FILE SUMBER
-            for src in monthly_sources[bulan]:
-                move_file_to_folder(src["source_file_id"], ARCHIVE_FOLDER_ID)
-                processed_files.append({
-                    "original_name": src["source_name"],
-                    "new_name": filename
-                })
+        existing = drive.files().list(
+            q=f"'{FOLDER_ID}' in parents and name='{filename}'",
+            fields="files(id)"
+        ).execute().get("files", [])
 
-            add_log(f"✔ {filename} selesai & sumber diarsipkan")
-            
-        except Exception as e:
-            add_log(f"❌ Error processing {filename}: {e}", is_error=True)
+        media = MediaIoBaseUpload(
+            output,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        if existing:
+            drive.files().update(fileId=existing[0]["id"], media_body=media).execute()
+        else:
+            drive.files().create(
+                body={"name": filename, "parents": [FOLDER_ID]},
+                media_body=media
+            ).execute()
+
+        # 3️⃣ ARSIPKAN SEMUA FILE SUMBER
+        for src in monthly_sources[bulan]:
+            move_file_to_folder(src["source_file_id"], ARCHIVE_FOLDER_ID)
+            processed_files.append({
+                "original_name": src["source_name"],
+                "new_name": filename
+            })
+
+        add_log(f"✔ {filename} selesai & sumber diarsipkan")
 
 # ----------------------------------------------------
 
