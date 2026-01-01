@@ -17,11 +17,11 @@ import random
 # KONFIGURASI
 # ============================
 # Sumber data: Sheet Sisa dari script sebelumnya
-SOURCE_SPREADSHEET_ID = "1GRo7BP1a2MdEjZEnUVVDQBqp7KuLOViRlxMOkL0ERJE"
+SOURCE_SPREADSHEET_ID = "1-UWjT-N5iRwFwpG-yVLiSxmyONn0VWoLESDPfchmDTk"
 SOURCE_SHEET_NAME = "Sisa"
 
 # Target: Spreadsheet untuk output WA
-TARGET_SPREADSHEET_ID = "1u6owIr34B5c2aA6FcgncMGUv7AqQHHI--8Z9e-aI_mo"
+TARGET_SPREADSHEET_ID = "1ThYTH9QLZb5nXY1TCFN62h7zXqUfCdZQw5C4bxRAVjU"
 TARGET_SHEET_NAME = "Sisa versi Wa"
 
 # ============================
