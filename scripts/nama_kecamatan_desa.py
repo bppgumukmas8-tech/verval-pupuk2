@@ -26,7 +26,7 @@ warnings.filterwarnings('ignore')
 # KONFIGURASI
 # ============================
 
-FOLDER_ID = '1BBgVsgq7EMGs0TLaO_4GEtUppznm1v5J'  # ID folder ERDKK
+FOLDER_ID = '13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ'  # ID folder ERDKK
 KODE_FILE_ID = '19p-6xUhMfwQ81o37eldJQmSZ7GTtCEJk'  # ID file Kode desa dan kios
 
 # ============================
