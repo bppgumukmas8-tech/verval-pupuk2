@@ -15,9 +15,9 @@ from googleapiclient.errors import HttpError
 # ============================
 # KONFIGURASI QUOTA OPTIMIZATION
 # ============================
-FOLDER_ID = "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn"
-MAIN_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_SfDYp5vrsERCNsaCsA3obp9tuNKIuduQJS9EWKpkag/edit"
-MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1SgVxOjmht5fmYson6Wcd-l6GVabZP44gV7j9HdH0gY8/edit"
+FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"
+MAIN_SHEET_URL = "https://docs.google.com/spreadsheets/d/1qcIGC7Vle9O8dOKJNQjyPW7QIymNX-_I44CUthRDQM0/edit"
+MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1LBxLsPSuba7uDJLYnYRBOWyGUbM30dkBo4SOMJD0Xj0/edit"
 
 # OPTIMIZED RATE LIMITING
 MAX_RETRIES = 5
