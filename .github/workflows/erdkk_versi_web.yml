@@ -1,4 +1,4 @@
-name: Rekap Data ERDKK Otomatis
+name: ERDKK versi Web Otomatis
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - 'scripts/erdkk_processor.py'
+      - 'scripts/erdkk_versi_web.py'
       - '.github/workflows/rekap-erdkk.yml'
 
 jobs:
@@ -66,17 +66,17 @@ jobs:
           echo ""
           
           # Cek apakah file script ada
-          if [ -f "scripts/erdkk_processor.py" ]; then
-            echo "✅ Script ditemukan: scripts/erdkk_processor.py"
+          if [ -f "scripts/erdkk_versi_web.py" ]; then
+            echo "✅ Script ditemukan: scripts/erdkk_versi_web.py"
           else
-            echo "❌ Script tidak ditemukan! Pastikan file erdkk_processor.py ada di folder scripts/"
+            echo "❌ Script tidak ditemukan! Pastikan file erdkk_versi_web.py ada di folder scripts/"
             exit 1
           fi
           
           # Jalankan script Python
           echo "▶️  Menjalankan script ERDKK..."
           cd scripts
-          python erdkk_processor.py
+          python erdkk_versi_web.py
           
           EXIT_CODE=$?
           
@@ -127,7 +127,7 @@ jobs:
       - name: 📊 Generate workflow summary
         if: always()
         run: |
-          echo "## 📋 Ringkasan Proses Rekap ERDKK" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Ringkasan Proses Rekap ERDKK versi WEB" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
