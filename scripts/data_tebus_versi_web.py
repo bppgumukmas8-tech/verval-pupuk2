@@ -26,10 +26,10 @@ import io
 # ============================
 # KONFIGURASI
 # ============================
-FOLDER_ID = "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn"  # Folder Google Drive
+FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"  # Folder Google Drive
 
 # GUNAKAN SPREADSHEET YANG SAMA DENGAN WORKFLOW LAIN
-SPREADSHEET_ID = "10Do2tgCtdJadFcMF0pYOWdgz9c8s3HrWXxOQMIzRW3Y"
+SPREADSHEET_ID = "1kh9OBcSKrh_cDy6u071vQP1kkEXNdpM4ERP9rd0tjqw"
 SHEET_NAME = "Data_Gabungan"  # Nama sheet untuk hasil
 
 # ============================
