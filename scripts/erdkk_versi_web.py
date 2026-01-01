@@ -118,7 +118,157 @@ def gabung_komoditas_unique(komoditas_list):
 # ============================
 # FUNGSI PROSES DATA (MIRIP DENGAN VBA)
 # ============================
-def proses_data_gabungan
+def proses_data_gabungan(dataframes_list):
+    """
+    Memproses dan menggabungkan data berdasarkan NIK dan Poktan
+    dengan error handling yang lebih baik
+    """
+    if not dataframes_list:
+        return []
+    
+    # Dictionary untuk menyimpan data hasil
+    data_dict = {}
+    
+    hasil_rows = []
+    header = None
+    
+    for df_idx, df in enumerate(dataframes_list):
+        if df.empty:
+            print(f"   ⚠️  Dataframe {df_idx} kosong, dilewati")
+            continue
+            
+        print(f"   📊 Processing dataframe {df_idx + 1}: {len(df)} rows")
+        
+        # Set header dari file pertama yang valid
+        if header is None and not df.empty:
+            original_columns = list(df.columns)
+            # Buat header output sesuai dengan VBA
+            if len(original_columns) >= 9:
+                # Format: A-E, komoditas gabungan, lalu kolom numerik
+                output_header = original_columns[:5] + ["KOMODITAS"] + original_columns[8:]
+            else:
+                output_header = original_columns
+            
+            header = output_header
+            hasil_rows.append(header)
+            print(f"   📋 Header set: {header}")
+        
+        # Proses setiap baris
+        processed_rows = 0
+        for i in range(len(df)):
+            row = df.iloc[i]
+            
+            # Buat key unik seperti di VBA
+            key_parts = []
+            for col in ['KTP', 'NAMA', 'DESA', 'POKTAN', 'KIOS']:
+                if col in df.columns:
+                    val = str(row[col]) if not pd.isna(row[col]) else ""
+                else:
+                    val = ""
+                key_parts.append(val)
+            
+            key = "|".join(key_parts)
+            
+            if key not in data_dict:
+                # Data baru
+                data_dict[key] = {
+                    'data': None,
+                    'komoditas_set': set(),
+                    'index': len(hasil_rows)
+                }
+                
+                # Siapkan row hasil
+                hasil_row = []
+                
+                # Kolom 1-5 (A-E): Data utama
+                for j in range(5):
+                    if j < len(header):
+                        col_name = header[j]
+                        if col_name in df.columns:
+                            val = row[col_name]
+                            # KTP sebagai teks
+                            if j == 0:
+                                hasil_row.append(str(val) if not pd.isna(val) else "")
+                            else:
+                                hasil_row.append(val if not pd.isna(val) else "")
+                        else:
+                            hasil_row.append("")
+                    else:
+                        hasil_row.append("")
+                
+                # Kolom 6: Gabungkan komoditas
+                komoditas_list = []
+                for komoditas_col in ['KOMODITAS_G', 'KOMODITAS_H', 'KOMODITAS_I']:
+                    if komoditas_col in df.columns:
+                        komoditas_list.append(row[komoditas_col])
+                
+                komoditas_str = gabung_komoditas_unique(komoditas_list)
+                data_dict[key]['komoditas_set'] = set(komoditas_str.split()) if komoditas_str else set()
+                hasil_row.append(komoditas_str)
+                
+                # Kolom 7+: Data numerik
+                for j in range(6, len(header)):
+                    col_name = header[j]
+                    if col_name in df.columns:
+                        val = row[col_name]
+                        try:
+                            if pd.isna(val) or val == "":
+                                num_val = 0
+                            else:
+                                num_val = float(str(val).replace(',', '').replace(' ', ''))
+                        except:
+                            num_val = 0
+                    else:
+                        num_val = 0
+                    hasil_row.append(num_val)
+                
+                data_dict[key]['data'] = hasil_row
+                hasil_rows.append(hasil_row)
+                processed_rows += 1
+                
+            else:
+                # Update data yang sudah ada
+                idx = data_dict[key]['index']
+                existing_row = hasil_rows[idx]
+                
+                # Update komoditas
+                komoditas_list = []
+                for komoditas_col in ['KOMODITAS_G', 'KOMODITAS_H', 'KOMODITAS_I']:
+                    if komoditas_col in df.columns:
+                        komoditas_list.append(row[komoditas_col])
+                
+                new_komoditas = gabung_komoditas_unique(komoditas_list)
+                if new_komoditas:
+                    new_set = set(new_komoditas.split())
+                    existing_set = data_dict[key]['komoditas_set']
+                    existing_set.update(new_set)
+                    existing_row[5] = " ".join(existing_set)
+                
+                # Jumlahkan nilai numerik
+                for j in range(6, len(header)):
+                    col_name = header[j]
+                    if col_name in df.columns:
+                        val = row[col_name]
+                        try:
+                            if pd.isna(val) or val == "":
+                                num_val = 0
+                            else:
+                                num_val = float(str(val).replace(',', '').replace(' ', ''))
+                        except:
+                            num_val = 0
+                        
+                        # Jumlahkan dengan existing
+                        try:
+                            existing_val = float(existing_row[j]) if existing_row[j] != "" else 0
+                        except:
+                            existing_val = 0
+                        
+                        existing_row[j] = existing_val + num_val
+        
+        print(f"   ✅ Processed {processed_rows} rows from dataframe {df_idx + 1}")
+    
+    print(f"📊 Total unique keys: {len(data_dict)}")
+    return hasil_rows
 
 # ============================
 # FUNGSI STANDARDISASI KOLOM
@@ -311,9 +461,6 @@ def send_email_notification(subject, message, is_success=True):
         print(f"❌ Gagal mengirim email: {str(e)}")
         return False
 
-# ============================
-# PROSES UTAMA
-# ============================
 # ============================
 # PROSES UTAMA
 # ============================
