@@ -1,0 +1,149 @@
+name: Rekap Data ERDKK Otomatis
+
+on:
+  schedule:
+    # Jam 16:00 UTC = 23:00 WIB (setiap hari)
+    - cron: "0 16 * * *"
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'scripts/erdkk_processor.py'
+      - '.github/workflows/rekap-erdkk.yml'
+
+jobs:
+  run-erdkk-processor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # Tambah timeout karena proses banyak file
+
+    steps:
+      - name: 🛎️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas>=2.0.0
+          pip install gspread>=5.0.0
+          pip install google-auth>=2.0.0
+          pip install google-api-python-client>=2.0.0
+          pip install openpyxl>=3.0.0
+          pip install PyYAML>=6.0
+          pip install gspread-dataframe>=3.3.0
+          pip install python-dotenv>=1.0.0
+          pip install chardet>=5.0.0
+
+      - name: 🔧 Set environment variables
+        run: |
+          echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+          echo "TZ=Asia/Jakarta" >> $GITHUB_ENV
+
+      - name: 📂 Create directories
+        run: |
+          mkdir -p scripts
+          mkdir -p logs
+          mkdir -p temp
+
+      - name: 🚀 Run ERDKK Processor Script
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+        run: |
+          echo "🎯 Memulai proses rekap data ERDKK..."
+          echo "📅 Waktu: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "📁 Folder ID: 13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ"
+          echo "📊 Spreadsheet ID: 1aEx7cgw1KIdpXo20dD3LnCHF6PWer1wWgT7H5YKSqlY"
+          echo "📧 Email pengirim: $SENDER_EMAIL"
+          echo "📧 Email penerima: $RECIPIENT_EMAILS"
+          echo ""
+          
+          # Cek apakah file script ada
+          if [ -f "scripts/erdkk_processor.py" ]; then
+            echo "✅ Script ditemukan: scripts/erdkk_processor.py"
+          else
+            echo "❌ Script tidak ditemukan! Pastikan file erdkk_processor.py ada di folder scripts/"
+            exit 1
+          fi
+          
+          # Jalankan script Python
+          echo "▶️  Menjalankan script ERDKK..."
+          cd scripts
+          python erdkk_processor.py
+          
+          EXIT_CODE=$?
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ Script berhasil dijalankan dengan exit code: $EXIT_CODE"
+          else
+            echo "❌ Script gagal dengan exit code: $EXIT_CODE"
+            # Simpan log error
+            echo "💾 Menyimpan log error..."
+            echo "Exit Code: $EXIT_CODE" > ../logs/error_$(date +%Y%m%d_%H%M%S).log
+            echo "Time: $(date)" >> ../logs/error_$(date +%Y%m%d_%H%M%S).log
+          fi
+          
+          cd ..
+          
+          echo ""
+          echo "🏁 Proses selesai pada: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+      - name: 📤 Upload processed data (if exists)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erdkk-processed-data
+          path: |
+            data_erdkk/
+            logs/
+          retention-days: 3
+
+      - name: 📋 Upload error logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erdkk-error-logs
+          path: |
+            logs/
+            data_erdkk/
+            temp/
+          retention-days: 7
+
+      - name: 🧹 Clean up temporary files
+        if: always()
+        run: |
+          echo "🧹 Membersihkan file temporary..."
+          rm -rf data_erdkk/ 2>/dev/null || true
+          rm -rf temp/ 2>/dev/null || true
+          echo "✅ Clean up selesai"
+
+      - name: 📊 Generate workflow summary
+        if: always()
+        run: |
+          echo "## 📋 Ringkasan Proses Rekap ERDKK" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Waktu Eksekusi:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Dimulai: ${{ fromJSON('{}').startedAt || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Selesai: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          
+          if github.event_name == 'schedule' ]; then
+            echo "- Schedule: 16:00 UTC (23:00 WIB) setiap hari" >> $GITHUB_STEP_SUMMARY
+          elif github.event_name == 'workflow_dispatch' ]; then
+            echo "- Manual trigger oleh: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Links:**" >> $GITHUB_STEP_SUMMARY
+          echo "- [Spreadsheet Hasil](https://docs.google.com/spreadsheets/d/1aEx7cgw1KIdpXo20dD3LnCHF6PWer1wWgT7H5YKSqlY/edit)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Folder Data ERDKK](https://drive.google.com/drive/folders/13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ)" >> $GITHUB_STEP_SUMMARY
