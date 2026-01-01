@@ -28,8 +28,8 @@ import traceback
 # ==============================================
 # KONFIGURASI
 # ==============================================
-FOLDER_ID = "1BBgVsgq7EMGs0TLaO_4GEtUppznm1v5J"
-SPREADSHEET_ID = "1W5s0LPqugmcqsjPPaqzKlwUJBAmJfyls574eak_BQ5Q"
+FOLDER_ID = "13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ"
+SPREADSHEET_ID = "1nrZ1YLMijIrmHA3hJUw5AsdElkTH1oIxt3ux2mbdTn8"
 
 # ==============================================
 # LOAD EMAIL CONFIGURATION FROM SECRETS
