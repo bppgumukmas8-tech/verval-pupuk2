@@ -27,9 +27,9 @@ import tempfile
 # ============================
 # KONFIGURASI
 # ============================
-ERDKK_FOLDER_ID = "1BBgVsgq7EMGs0TLaO_4GEtUppznm1v5J"  # Folder ERDKK
-REALISASI_FOLDER_ID = "1D2_eMQ28MadcGDKWn9lmVd-50ZnqNQMn"  # Folder realisasi
-OUTPUT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1FVi3xpzlq636wkv-J0d685WHmSGaYeo9O9ScRx1YlhQ/edit"
+ERDKK_FOLDER_ID = "13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ"  # Folder ERDKK
+REALISASI_FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"  # Folder realisasi
+OUTPUT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1xiMkISdgcquqt69dbFek8mEc0UNOZmtAALVgX5jaPJc/edit"
 
 # OPTIMIZED RATE LIMITING
 MAX_RETRIES = 5
