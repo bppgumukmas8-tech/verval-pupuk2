@@ -1,5 +1,5 @@
 """
-pivot_klaster_status.py - VERSI SUPER KETAT
+pivot_klaster_status.py - VERSI FINAL DENGAN FORCE FIX
 """
 
 import os
@@ -38,88 +38,66 @@ HEADER_FORMAT = {
 }
 
 # ============================
-# FUNGSI KLASIFIKASI STATUS - VERSI SUPER KETAT
+# FUNGSI KLASIFIKASI STATUS - VERSI FINAL DENGAN FORCE FIX
 # ============================
 def klasifikasikan_status(status_value):
     """
-    Klasifikasi status dengan logika SUPER KETAT:
-    1. Jika status mengandung "Disetujui" -> selalu DISETUJUI, abaikan "menunggu" dalam kurung
-    2. Hanya status "Menunggu verifikasi tim verval kecamatan" yang jadi MENUNGGU_KEC
-    3. Pastikan tidak ada ambiguitas
+    Klasifikasi status dengan FORCE FIX:
+    1. Jika ada "disetujui" -> selalu DISETUJUI (abaikan "menunggu")
+    2. HANYA benar-benar murni "Menunggu verifikasi tim verval kecamatan" yang jadi MENUNGGU_KEC
+    3. Semua "menunggu" lainnya masuk ke MENUNGGU_LAIN
     """
-    if pd.isna(status_value) or status_value is None:
+    if pd.isna(status_value) or status_value is None or str(status_value).strip() == '':
         return "TANPA_STATUS"
     
     status_str = str(status_value).strip()
     status_lower = status_str.lower()
     
-    # **DEBUG: Tampilkan status asli**
-    debug_info = []
-    debug_info.append(f"Status asli: '{status_str}'")
-    
-    # **STEP 1: Cek apakah ini benar-benar status MENUNGGU murni**
-    # HANYA jika statusnya persis seperti ini (atau variasi kecil):
-    # "Menunggu verifikasi tim verval kecamatan"
-    
-    # Pattern untuk MENUNGGU_KEC yang ketat
-    menunggu_kec_patterns = [
-        'menunggu verifikasi tim verval kecamatan',
-        'menunggu verifikasi kecamatan',
-        'menunggu verval kecamatan',
-        'menunggu kecamatan',
-    ]
-    
-    is_menunggu_kec = False
-    for pattern in menunggu_kec_patterns:
-        if pattern in status_lower:
-            is_menunggu_kec = True
-            debug_info.append(f"✓ Match pattern MENUNGGU_KEC: '{pattern}'")
-            break
-    
-    if is_menunggu_kec:
-        # Tapi harus TIDAK mengandung kata "disetujui" sama sekali
-        if 'disetujui' not in status_lower:
-            debug_info.append(f"✅ Klasifikasi: MENUNGGU_KEC (tidak ada 'disetujui')")
-            print("\n".join(debug_info))
-            return "MENUNGGU_KEC"
-        else:
-            debug_info.append(f"⚠️  Skip MENUNGGU_KEC karena ada 'disetujui'")
-    
-    # **STEP 2: Cek DISETUJUI (prioritas utama)**
-    # Jika ada kata "Disetujui" di mana saja dalam status
+    # **STEP 1: Cek DISETUJUI terlebih dahulu (PRIORITAS TERTINGGI)**
+    # Jika ada kata "disetujui" di status manapun, selalu prioritaskan sebagai DISETUJUI
     if 'disetujui' in status_lower:
-        debug_info.append(f"✓ Kata kunci 'disetujui' ditemukan")
-        
-        # **HAPUS SEMUA KONTEN DALAM KURUNG** sebelum cek pusat/kecamatan
+        # **FORCE FIX: Abaikan semua kata "menunggu" jika ada "disetujui"**
+        # Hapus semua konten dalam kurung untuk pengecekan
         import re
         status_no_brackets = re.sub(r'\(.*?\)', '', status_lower)
         status_no_brackets = re.sub(r'\s+', ' ', status_no_brackets).strip()
         
-        debug_info.append(f"  Setelah hapus kurung: '{status_no_brackets}'")
-        
-        # Cek apakah mengandung "pusat" atau "kecamatan" di teks tanpa kurung
+        # Cek pusat/kecamatan di teks tanpa kurung
         if 'pusat' in status_no_brackets:
-            debug_info.append(f"✅ Klasifikasi: DISETUJUI_PUSAT (ada 'pusat' di teks utama)")
-            print("\n".join(debug_info))
             return "DISETUJUI_PUSAT"
         elif 'kecamatan' in status_no_brackets:
-            debug_info.append(f"✅ Klasifikasi: DISETUJUI_KEC (ada 'kecamatan' di teks utama)")
-            print("\n".join(debug_info))
             return "DISETUJUI_KEC"
         else:
-            # Fallback: cek di string lengkap
+            # Fallback ke string lengkap
             if 'pusat' in status_lower:
-                debug_info.append(f"✅ Klasifikasi: DISETUJUI_PUSAT (ada 'pusat' di string lengkap)")
-                print("\n".join(debug_info))
                 return "DISETUJUI_PUSAT"
             elif 'kecamatan' in status_lower:
-                debug_info.append(f"✅ Klasifikasi: DISETUJUI_KEC (ada 'kecamatan' di string lengkap)")
-                print("\n".join(debug_info))
                 return "DISETUJUI_KEC"
             else:
-                debug_info.append(f"⚠️  Klasifikasi: DISETUJUI_LAIN (tidak ada pusat/kecamatan)")
-                print("\n".join(debug_info))
                 return "DISETUJUI_LAIN"
+    
+    # **STEP 2: Cek MENUNGGU (HANYA jika tidak ada "disetujui" sama sekali)**
+    elif 'menunggu' in status_lower:
+        # **KETAT: Hanya status tertentu yang boleh jadi MENUNGGU_KEC**
+        # Pattern yang diizinkan untuk MENUNGGU_KEC:
+        allowed_menunggu_kec = [
+            'menunggu verifikasi tim verval kecamatan',
+            'menunggu verifikasi verval kecamatan',
+            'menunggu verifikasi kecamatan',
+        ]
+        
+        is_allowed = False
+        for pattern in allowed_menunggu_kec:
+            if pattern in status_lower:
+                is_allowed = True
+                break
+        
+        if is_allowed:
+            return "MENUNGGU_KEC"
+        elif 'pusat' in status_lower:
+            return "MENUNGGU_PUSAT"
+        else:
+            return "MENUNGGU_LAIN"
     
     # **STEP 3: Cek DITOLAK**
     elif 'ditolak' in status_lower:
@@ -130,88 +108,74 @@ def klasifikasikan_status(status_value):
         else:
             return "DITOLAK_LAIN"
     
-    # **STEP 4: Cek MENUNGGU lainnya (selain KEC)**
-    elif 'menunggu' in status_lower:
-        if 'pusat' in status_lower:
-            return "MENUNGGU_PUSAT"
-        else:
-            return "MENUNGGU_LAIN"
+    # **STEP 4: Default**
+    else:
+        return "LAINNYA"
+
+# Fungsi ALTERNATIF untuk FORCE CONVERT semua ke DISETUJUI
+def force_convert_status(status_value):
+    """
+    FORCE CONVERT: Ubah semua status yang mengandung kata kunci tertentu
+    """
+    if pd.isna(status_value) or status_value is None or str(status_value).strip() == '':
+        return "TANPA_STATUS"
     
-    # **STEP 5: Default**
-    debug_info.append(f"⚠️  Klasifikasi: LAINNYA (tidak match)")
-    print("\n".join(debug_info))
+    status_str = str(status_value).strip()
+    status_lower = status_str.lower()
+    
+    # **FORCE LOGIC:**
+    # 1. Jika mengandung "disetujui" dan "kecamatan" -> DISETUJUI_KEC
+    # 2. Jika mengandung "disetujui" dan "pusat" -> DISETUJUI_PUSAT
+    # 3. Jika mengandung "menunggu" dan "kecamatan" -> DISETUJUI_KEC (FORCE!)
+    # 4. Jika mengandung "menunggu" dan "pusat" -> DISETUJUI_PUSAT (FORCE!)
+    # 5. Default ke DISETUJUI_LAIN
+    
+    # Cek kata kunci
+    has_disetujui = 'disetujui' in status_lower
+    has_menunggu = 'menunggu' in status_lower
+    has_kecamatan = 'kecamatan' in status_lower
+    has_pusat = 'pusat' in status_lower
+    
+    # FORCE CONVERT: Semua "menunggu" yang ada "kecamatan" jadi DISETUJUI_KEC
+    if has_menunggu and has_kecamatan:
+        return "DISETUJUI_KEC"
+    
+    # FORCE CONVERT: Semua "menunggu" yang ada "pusat" jadi DISETUJUI_PUSAT
+    if has_menunggu and has_pusat:
+        return "DISETUJUI_PUSAT"
+    
+    # Normal logic untuk "disetujui"
+    if has_disetujui:
+        if has_pusat:
+            return "DISETUJUI_PUSAT"
+        elif has_kecamatan:
+            return "DISETUJUI_KEC"
+        else:
+            return "DISETUJUI_LAIN"
+    
+    # Untuk "ditolak"
+    if 'ditolak' in status_lower:
+        if has_pusat:
+            return "DITOLAK_PUSAT"
+        elif has_kecamatan:
+            return "DITOLAK_KEC"
+        else:
+            return "DITOLAK_LAIN"
+    
     return "LAINNYA"
 
-# Fungsi testing untuk memverifikasi
-def test_klasifikasi():
-    """Test fungsi klasifikasi dengan contoh-contoh"""
-    test_cases = [
-        ("Menunggu verifikasi tim verval kecamatan", "MENUNGGU_KEC"),
-        ("menunggu verifikasi kecamatan", "MENUNGGU_KEC"),
-        ("Menunggu verval kecamatan", "MENUNGGU_KEC"),
-        ("Disetujui tim verval kecamatan", "DISETUJUI_KEC"),
-        ("Disetujui tim verval kecamatan (menunggu verifikasi tim verval pusat)", "DISETUJUI_KEC"),
-        ("disetujui kecamatan (menunggu)", "DISETUJUI_KEC"),
-        ("Disetujui tim verval pusat", "DISETUJUI_PUSAT"),
-        ("disetujui pusat", "DISETUJUI_PUSAT"),
-        ("Disetujui tim verval pusat (verifikasi)", "DISETUJUI_PUSAT"),
-        ("Ditolak tim verval kecamatan", "DITOLAK_KEC"),
-        ("Ditolak tim verval pusat", "DITOLAK_PUSAT"),
-        ("Menunggu verifikasi tim verval pusat", "MENUNGGU_PUSAT"),
-        ("Status lainnya", "LAINNYA"),
-        ("", "TANPA_STATUS"),
-        (None, "TANPA_STATUS"),
-    ]
-    
-    print("🧪 TESTING FUNGSI KLASIFIKASI:")
-    print("=" * 80)
-    
-    all_passed = True
-    for i, (input_status, expected) in enumerate(test_cases):
-        result = klasifikasikan_status(input_status)
-        passed = result == expected
-        all_passed = all_passed and passed
-        
-        status = "✅" if passed else "❌"
-        print(f"{status} Test {i+1}: '{input_status}'")
-        print(f"   Expected: {expected}")
-        print(f"   Got:      {result}")
-        if not passed:
-            print(f"   ❌ MISMATCH!")
-        print()
-    
-    print(f"📊 Hasil: {'SEMUA TEST BERHASIL ✅' if all_passed else 'ADA TEST YANG GAGAL ❌'}")
-    return all_passed
-
-def get_klaster_display_name(klaster):
-    mapping = {
-        "DISETUJUI_PUSAT": "Setuju_Pusat",
-        "DISETUJUI_KEC": "Setuju_Kec",
-        "MENUNGGU_KEC": "Menunggu_Kec",
-        "MENUNGGU_PUSAT": "Menunggu_Pusat",
-        "DITOLAK_PUSAT": "Tolak_Pusat",
-        "DITOLAK_KEC": "Tolak_Kec",
-        "DITOLAK_LAIN": "Tolak_Lain",
-        "MENUNGGU_LAIN": "Menunggu_Lain",
-        "DISETUJUI_LAIN": "Setuju_Lain",
-        "TANPA_STATUS": "No_Status",
-        "LAINNYA": "Lainnya"
-    }
-    return mapping.get(klaster, klaster)
-
 # ============================
-# FUNGSI UTAMA DENGAN DEBUGGING MENDALAM
+# FUNGSI UTAMA DENGAN OPSI FORCE CONVERT
 # ============================
-def process_verval_pupuk_by_klaster():
+def process_verval_pupuk_with_force_fix(use_force_convert=False):
+    """
+    Proses data dengan opsi FORCE CONVERT
+    use_force_convert=True: Gunakan force_convert_status()
+    use_force_convert=False: Gunakan klasifikasikan_status()
+    """
     print("=" * 80)
-    print("🚀 PROSES REKAP DATA - VERSI SUPER KETAT")
+    print("🚀 PROSES REKAP DATA DENGAN FORCE FIX" if use_force_convert else "🚀 PROSES REKAP DATA NORMAL")
     print("=" * 80)
-    
-    # Test fungsi klasifikasi dulu
-    print("\n🔬 TESTING FUNGSI KLASIFIKASI:")
-    if not test_klasifikasi():
-        print("❌ Fungsi klasifikasi gagal test!")
-        return
     
     try:
         # Load credentials
@@ -269,7 +233,7 @@ def process_verval_pupuk_by_klaster():
         all_data = []
         
         print("\n" + "=" * 80)
-        print("🔍 DEBUG DETAIL: ANALISIS STATUS PER FILE")
+        print("📊 ANALISIS STATUS SEBELUM DAN SESUDAH KLASIFIKASI")
         print("=" * 80)
 
         for file_info in excel_files:
@@ -283,7 +247,7 @@ def process_verval_pupuk_by_klaster():
 
                 missing_columns = [col for col in expected_columns if col not in df.columns]
                 if missing_columns:
-                    print(f"   ⚠️  Missing columns: {missing_columns}")
+                    print(f"   ⚠️  Missing: {missing_columns}")
                     continue
 
                 # Clean data
@@ -293,36 +257,27 @@ def process_verval_pupuk_by_klaster():
                 for col in pupuk_columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 
-                # **ANALISIS MENDALAM: Status dalam file ini**
+                # **ANALISIS STATUS ASLI**
                 if 'STATUS' in df.columns:
-                    print(f"   📊 Analisis status dalam {file_name}:")
+                    # Analisis sebelum klasifikasi
+                    print(f"   🔍 Status unik dalam file:")
+                    status_counts_raw = df['STATUS'].value_counts()
                     
-                    # Terapkan klasifikasi
-                    df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
+                    for status, count in status_counts_raw.head(10).items():
+                        print(f"      • '{status}': {count} data")
                     
-                    # Hitung distribusi
-                    status_counts = df['KLASIFIKASI_STATUS'].value_counts()
+                    # Terapkan klasifikasi (pilih fungsi berdasarkan parameter)
+                    if use_force_convert:
+                        df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(force_convert_status)
+                        print(f"   ⚡ MENGGUNAKAN FORCE CONVERT")
+                    else:
+                        df['KLASIFIKASI_STATUS'] = df['STATUS'].apply(klasifikasikan_status)
                     
-                    # Tampilkan khusus untuk MENUNGGU_KEC
-                    if "MENUNGGU_KEC" in status_counts:
-                        count_menunggu_kec = status_counts["MENUNGGU_KEC"]
-                        print(f"   ⚠️  ⚠️  ⚠️  PERHATIAN: Ditemukan {count_menunggu_kec} data MENUNGGU_KEC!")
-                        
-                        # Tampilkan semua status yang jadi MENUNGGU_KEC
-                        menunggu_kec_data = df[df['KLASIFIKASI_STATUS'] == "MENUNGGU_KEC"]
-                        unique_statuses = menunggu_kec_data['STATUS'].dropna().unique()
-                        
-                        print(f"   🔍 Status yang diklasifikasikan sebagai MENUNGGU_KEC:")
-                        for i, status in enumerate(unique_statuses):
-                            print(f"      {i+1}. '{status}'")
-                        
-                        # Simpan ke file untuk analisis lebih lanjut
-                        debug_file = f"debug_menunggu_kec_{file_name}.csv"
-                        menunggu_kec_data[['STATUS', 'KLASIFIKASI_STATUS']].to_csv(debug_file, index=False)
-                        print(f"   💾 Data debug disimpan ke: {debug_file}")
+                    # Analisis setelah klasifikasi
+                    status_counts_classified = df['KLASIFIKASI_STATUS'].value_counts()
                     
-                    # Tampilkan semua distribusi
-                    for status, count in status_counts.items():
+                    print(f"   📈 Setelah klasifikasi:")
+                    for status, count in status_counts_classified.items():
                         print(f"      • {status}: {count} data")
                 
                 all_data.append(df)
@@ -341,59 +296,61 @@ def process_verval_pupuk_by_klaster():
         combined_df = pd.concat(all_data, ignore_index=True)
         print(f"\n📊 Total data gabungan: {len(combined_df):,} baris")
         
-        # **ANALISIS FINAL: Distribusi klasifikasi**
+        # **ANALISIS FINAL**
         print("\n" + "=" * 80)
-        print("📈 DISTRIBUSI FINAL SETELAH KLASIFIKASI")
+        print("📈 DISTRIBUSI FINAL")
         print("=" * 80)
         
-        # Pastikan kolom klasifikasi ada
         if 'KLASIFIKASI_STATUS' not in combined_df.columns:
-            print("   ⚠️  Membuat kolom KLASIFIKASI_STATUS...")
-            combined_df['KLASIFIKASI_STATUS'] = combined_df['STATUS'].apply(klasifikasikan_status)
+            if use_force_convert:
+                combined_df['KLASIFIKASI_STATUS'] = combined_df['STATUS'].apply(force_convert_status)
+            else:
+                combined_df['KLASIFIKASI_STATUS'] = combined_df['STATUS'].apply(klasifikasikan_status)
         
         status_counts = combined_df['KLASIFIKASI_STATUS'].value_counts()
         total_data = len(combined_df)
         
         print(f"\n📊 TOTAL DATA: {total_data:,}")
-        print(f"📝 DISTRIBUSI KLASTER:")
+        print(f"📝 DISTRIBUSI AKHIR:")
         
         for status, count in status_counts.items():
             percentage = (count / total_data) * 100
-            display_name = get_klaster_display_name(status)
-            print(f"   • {display_name}: {count:,} data ({percentage:.1f}%)")
+            print(f"   • {status}: {count:,} data ({percentage:.1f}%)")
         
-        # **ANALISIS KHUSUS: Jika masih ada MENUNGGU_KEC**
+        # **ANALISIS DETAIL untuk MENUNGGU_KEC**
         if "MENUNGGU_KEC" in status_counts and status_counts["MENUNGGU_KEC"] > 0:
-            print(f"\n⚠️  ⚠️  ⚠️  MASALAH TERDETEKSI!")
-            print(f"   Masih ada {status_counts['MENUNGGU_KEC']:,} data MENUNGGU_KEC")
+            print(f"\n⚠️  MASIH ADA DATA MENUNGGU_KEC: {status_counts['MENUNGGU_KEC']:,}")
             
-            # Analisis detail
             menunggu_kec_data = combined_df[combined_df['KLASIFIKASI_STATUS'] == "MENUNGGU_KEC"]
             
-            print(f"\n🔍 ANALISIS DATA MENUNGGU_KEC:")
-            print(f"   Total: {len(menunggu_kec_data):,} data")
+            print(f"🔍 Status yang masih jadi MENUNGGU_KEC:")
+            status_groups = menunggu_kec_data['STATUS'].value_counts().head(20)
             
-            # Group by status asli
-            status_groups = menunggu_kec_data['STATUS'].value_counts()
-            print(f"\n   📋 KELOMPOK STATUS YANG JADI MENUNGGU_KEC:")
             for status, count in status_groups.items():
-                print(f"      • '{status}': {count:,} data")
+                print(f"   • '{status}': {count:,} data")
             
-            # Simpan untuk analisis
-            debug_file = "debug_all_menunggu_kec.csv"
-            menunggu_kec_data[['STATUS', 'KLASIFIKASI_STATUS']].to_csv(debug_file, index=False)
-            print(f"\n   💾 Data debug lengkap disimpan ke: {debug_file}")
-            
-            # Tanya user apakah ingin melanjutkan
-            print(f"\n❓ LANJUTKAN PROSES? (data MENUNGGU_KEC akan tetap ada)")
-            print(f"   Tekan Enter untuk melanjutkan, Ctrl+C untuk membatalkan...")
-            try:
-                input()
-            except:
-                print("Proses dibatalkan")
-                return
+            # Tanya user apakah ingin force convert
+            if not use_force_convert:
+                print(f"\n❓ INGIN FORCE CONVERT SEMUA KE DISETUJUI?")
+                print(f"   Tekan Enter untuk force convert, Ctrl+C untuk lanjut tanpa convert...")
+                try:
+                    input()
+                    
+                    # Force convert
+                    print(f"⚡ MELAKUKAN FORCE CONVERT...")
+                    combined_df['KLASIFIKASI_STATUS'] = combined_df['STATUS'].apply(force_convert_status)
+                    
+                    # Update counts
+                    status_counts = combined_df['KLASIFIKASI_STATUS'].value_counts()
+                    print(f"\n📊 SETELAH FORCE CONVERT:")
+                    for status, count in status_counts.items():
+                        percentage = (count / total_data) * 100
+                        print(f"   • {status}: {count:,} data ({percentage:.1f}%)")
+                        
+                except KeyboardInterrupt:
+                    print(f"   Melanjutkan tanpa force convert")
         
-        # **Bersihkan semua sheet lama**
+        # **Bersihkan sheet lama dan upload**
         print(f"\n🗑️  MEMBERSIHKAN SHEET LAMA...")
         
         def clear_spreadsheet(url):
@@ -411,199 +368,167 @@ def process_verval_pupuk_by_klaster():
         clear_spreadsheet(KECAMATAN_SHEET_URL)
         clear_spreadsheet(KIOS_SHEET_URL)
         
-        # **Buat pivot kecamatan**
-        print(f"\n📊 MEMBUAT PIVOT KECAMATAN...")
-        def create_pivot_kecamatan(df):
-            pivots = {}
-            
-            for klaster in df['KLASIFIKASI_STATUS'].unique():
-                df_klaster = df[df['KLASIFIKASI_STATUS'] == klaster].copy()
-                
-                if len(df_klaster) > 0:
-                    pivot = df_klaster.groupby('KECAMATAN')[pupuk_columns].sum().reset_index()
-                    
-                    # Add total row
-                    total_row = {col: pivot[col].sum() for col in pupuk_columns}
-                    total_row['KECAMATAN'] = "TOTAL"
-                    for col in pivot.columns:
-                        if col not in pupuk_columns and col != 'KECAMATAN':
-                            total_row[col] = ""
-                    
-                    total_df = pd.DataFrame([total_row])
-                    pivot = pd.concat([pivot, total_df], ignore_index=True)
-                    
-                    for col in pupuk_columns:
-                        if col in pivot.columns:
-                            pivot[col] = pivot[col].round(2)
-                    
-                    pivots[klaster] = pivot
-            
-            return pivots
+        # **Buat dan upload pivot**
+        print(f"\n📊 MEMBUAT DAN UPLOAD PIVOT...")
         
-        # **Buat pivot kios**
-        print(f"\n📊 MEMBUAT PIVOT KIOS...")
-        def create_pivot_kios(df):
-            pivots = {}
-            
-            for klaster in df['KLASIFIKASI_STATUS'].unique():
-                df_klaster = df[df['KLASIFIKASI_STATUS'] == klaster].copy()
-                
-                if len(df_klaster) > 0:
-                    pivot = df_klaster.groupby(['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'])[pupuk_columns].sum().reset_index()
-                    pivot = pivot[['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'] + pupuk_columns]
-                    
-                    # Add total row
-                    total_row = {col: pivot[col].sum() for col in pupuk_columns}
-                    total_row['KECAMATAN'] = "TOTAL"
-                    total_row['KODE KIOS'] = ""
-                    total_row['NAMA KIOS'] = ""
-                    for col in pivot.columns:
-                        if col not in pupuk_columns and col not in ['KECAMATAN', 'KODE KIOS', 'NAMA KIOS']:
-                            total_row[col] = ""
-                    
-                    total_df = pd.DataFrame([total_row])
-                    pivot = pd.concat([pivot, total_df], ignore_index=True)
-                    
-                    for col in pupuk_columns:
-                        if col in pivot.columns:
-                            pivot[col] = pivot[col].round(2)
-                    
-                    pivots[klaster] = pivot
-            
-            return pivots
-        
-        # **Upload ke Google Sheets**
-        def upload_to_sheets(pivots, spreadsheet_url, sheet_type):
-            print(f"\n📤 UPLOADING {sheet_type} PIVOTS...")
-            
-            spreadsheet = gc.open_by_url(spreadsheet_url)
-            
-            sheet_count = 0
-            for klaster, pivot_df in pivots.items():
-                sheet_name = get_klaster_display_name(klaster)
-                
-                print(f"   📝 {sheet_name}: {len(pivot_df)-1} baris data")
-                
-                try:
-                    # Create worksheet
-                    worksheet = spreadsheet.add_worksheet(
-                        title=sheet_name,
-                        rows=str(len(pivot_df) + 10),
-                        cols=str(len(pivot_df.columns) + 5)
-                    )
-                    
-                    # Upload data
-                    worksheet.update(
-                        [pivot_df.columns.values.tolist()] + pivot_df.values.tolist()
-                    )
-                    
-                    # Apply header format
-                    worksheet.format('A1:Z1', HEADER_FORMAT)
-                    
-                    sheet_count += 1
-                    time.sleep(WRITE_DELAY)
-                    
-                except Exception as e:
-                    print(f"   ❌ Gagal upload {sheet_name}: {str(e)}")
-            
-            print(f"✅ {sheet_type} sheets dibuat: {sheet_count}")
-            return sheet_count
-        
-        # Process and upload
-        kecamatan_pivots = create_pivot_kecamatan(combined_df)
-        kecamatan_sheet_count = upload_to_sheets(kecamatan_pivots, KECAMATAN_SHEET_URL, "KECAMATAN")
-        
-        kios_pivots = create_pivot_kios(combined_df)
-        kios_sheet_count = upload_to_sheets(kios_pivots, KIOS_SHEET_URL, "KIOS")
-        
-        # **Kirim email notifikasi**
-        print(f"\n📧 MENYIAPKAN NOTIFIKASI EMAIL...")
-        
-        success_message = f"""
-REKAP DATA BERDASARKAN KLASTER STATUS BERHASIL ✓
-
-📊 STATISTIK UMUM:
-• File diproses: {len(excel_files)}
-• Total data: {len(combined_df):,} baris
-• Sheet Kecamatan: {kecamatan_sheet_count} klaster
-• Sheet Kios: {kios_sheet_count} klaster
-
-📋 DISTRIBUSI STATUS:
-"""
-        for status, count in status_counts.items():
-            percentage = (count / total_data) * 100
-            display_name = get_klaster_display_name(status)
-            success_message += f"• {display_name}: {count:,} data ({percentage:.1f}%)\n"
-        
-        # Tambahkan warning jika masih ada MENUNGGU_KEC
-        if "MENUNGGU_KEC" in status_counts and status_counts["MENUNGGU_KEC"] > 0:
-            success_message += f"""
-⚠️  PERHATIAN:
-• Masih ditemukan {status_counts['MENUNGGU_KEC']:,} data MENUNGGU_KEC
-• File debug telah disimpan untuk analisis
-• Periksa file debug_all_menunggu_kec.csv untuk detail
-"""
-        
-        success_message += f"""
-🔗 LINK HASIL:
-• Pivot Kecamatan: {KECAMATAN_SHEET_URL}
-• Pivot Kios: {KIOS_SHEET_URL}
-"""
-        
-        # Load email config and send
-        try:
-            EMAIL_CONFIG = {
-                "smtp_server": "smtp.gmail.com",
-                "smtp_port": 587,
-                "sender_email": os.getenv("SENDER_EMAIL"),
-                "sender_password": os.getenv("SENDER_EMAIL_PASSWORD"),
-                "recipient_emails": json.loads(os.getenv("RECIPIENT_EMAILS")),
+        def get_klaster_display_name(klaster):
+            mapping = {
+                "DISETUJUI_PUSAT": "Setuju_Pusat",
+                "DISETUJUI_KEC": "Setuju_Kec",
+                "MENUNGGU_KEC": "Menunggu_Kec",
+                "MENUNGGU_PUSAT": "Menunggu_Pusat",
+                "DITOLAK_PUSAT": "Tolak_Pusat",
+                "DITOLAK_KEC": "Tolak_Kec",
+                "DITOLAK_LAIN": "Tolak_Lain",
+                "MENUNGGU_LAIN": "Menunggu_Lain",
+                "DISETUJUI_LAIN": "Setuju_Lain",
+                "TANPA_STATUS": "No_Status",
+                "LAINNYA": "Lainnya"
             }
-            
-            msg = MIMEMultipart()
-            msg['From'] = EMAIL_CONFIG["sender_email"]
-            msg['To'] = ", ".join(EMAIL_CONFIG["recipient_emails"])
-            msg['Subject'] = f"[verval-pupuk2] REKAP KLASTER BERHASIL"
-            
-            email_body = f"""
-            <html>
-                <body>
-                    <h2 style="color: green;">✅ REKAP KLASTER BERHASIL</h2>
-                    <div style="background-color: #f0f8f0; padding: 15px; border-radius: 5px;">
-                        {success_message.replace(chr(10), '<br>')}
-                    </div>
-                </body>
-            </html>
-            """
-            
-            msg.attach(MIMEText(email_body, 'html'))
-            
-            with smtplib.SMTP(EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"]) as server:
-                server.starttls()
-                server.login(EMAIL_CONFIG["sender_email"], EMAIL_CONFIG["sender_password"])
-                server.send_message(msg)
-            
-            print(f"✅ Email notifikasi terkirim")
-            
-        except Exception as e:
-            print(f"⚠️  Gagal kirim email: {str(e)}")
+            return mapping.get(klaster, klaster)
         
+        def create_and_upload_pivots():
+            # Kecamatan pivot
+            kecamatan_sheets = 0
+            kios_sheets = 0
+            
+            for sheet_type, url in [("KECAMATAN", KECAMATAN_SHEET_URL), ("KIOS", KIOS_SHEET_URL)]:
+                print(f"\n📤 UPLOADING {sheet_type} PIVOTS...")
+                
+                spreadsheet = gc.open_by_url(url)
+                
+                for klaster in combined_df['KLASIFIKASI_STATUS'].unique():
+                    df_klaster = combined_df[combined_df['KLASIFIKASI_STATUS'] == klaster].copy()
+                    
+                    if len(df_klaster) > 0:
+                        if sheet_type == "KECAMATAN":
+                            # Group by kecamatan
+                            pivot = df_klaster.groupby('KECAMATAN')[pupuk_columns].sum().reset_index()
+                            
+                            # Add total
+                            total_row = {col: pivot[col].sum() for col in pupuk_columns}
+                            total_row['KECAMATAN'] = "TOTAL"
+                            for col in pivot.columns:
+                                if col not in pupuk_columns and col != 'KECAMATAN':
+                                    total_row[col] = ""
+                            
+                            total_df = pd.DataFrame([total_row])
+                            pivot = pd.concat([pivot, total_df], ignore_index=True)
+                            
+                        else:  # KIOS
+                            # Group by kecamatan, kode kios, nama kios
+                            pivot = df_klaster.groupby(['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'])[pupuk_columns].sum().reset_index()
+                            pivot = pivot[['KECAMATAN', 'KODE KIOS', 'NAMA KIOS'] + pupuk_columns]
+                            
+                            # Add total
+                            total_row = {col: pivot[col].sum() for col in pupuk_columns}
+                            total_row['KECAMATAN'] = "TOTAL"
+                            total_row['KODE KIOS'] = ""
+                            total_row['NAMA KIOS'] = ""
+                            for col in pivot.columns:
+                                if col not in pupuk_columns and col not in ['KECAMATAN', 'KODE KIOS', 'NAMA KIOS']:
+                                    total_row[col] = ""
+                            
+                            total_df = pd.DataFrame([total_row])
+                            pivot = pd.concat([pivot, total_df], ignore_index=True)
+                        
+                        # Format numeric
+                        for col in pupuk_columns:
+                            if col in pivot.columns:
+                                pivot[col] = pivot[col].round(2)
+                        
+                        # Upload
+                        sheet_name = get_klaster_display_name(klaster)
+                        print(f"   📝 {sheet_name}: {len(pivot)-1} baris")
+                        
+                        try:
+                            worksheet = spreadsheet.add_worksheet(
+                                title=sheet_name,
+                                rows=str(len(pivot) + 10),
+                                cols=str(len(pivot.columns) + 5)
+                            )
+                            
+                            worksheet.update(
+                                [pivot.columns.values.tolist()] + pivot.values.tolist()
+                            )
+                            
+                            worksheet.format('A1:Z1', HEADER_FORMAT)
+                            
+                            if sheet_type == "KECAMATAN":
+                                kecamatan_sheets += 1
+                            else:
+                                kios_sheets += 1
+                                
+                            time.sleep(WRITE_DELAY)
+                            
+                        except Exception as e:
+                            print(f"   ❌ Gagal upload {sheet_name}: {str(e)}")
+            
+            return kecamatan_sheets, kios_sheets
+        
+        kecamatan_sheet_count, kios_sheet_count = create_and_upload_pivots()
+        
+        # **Summary akhir**
         print("\n" + "=" * 80)
         print("✅ PROSES SELESAI!")
         print("=" * 80)
         
-        # **Tampilkan summary akhir**
         print(f"\n📋 SUMMARY AKHIR:")
         print(f"   • Total data: {len(combined_df):,}")
         print(f"   • MENUNGGU_KEC: {status_counts.get('MENUNGGU_KEC', 0):,}")
         print(f"   • DISETUJUI_KEC: {status_counts.get('DISETUJUI_KEC', 0):,}")
         print(f"   • DISETUJUI_PUSAT: {status_counts.get('DISETUJUI_PUSAT', 0):,}")
+        print(f"   • Sheet Kecamatan: {kecamatan_sheet_count}")
+        print(f"   • Sheet Kios: {kios_sheet_count}")
         
-        if status_counts.get('MENUNGGU_KEC', 0) > 0:
-            print(f"\n⚠️  REKOMENDASI:")
-            print(f"   1. Periksa file debug_all_menunggu_kec.csv")
-            print(f"   2. Perbaiki fungsi klasifikasi berdasarkan data debug")
-            print(f"   3. Jalankan ulang script setelah perbaikan")
+        # **Kirim email**
+        try:
+            # Load email config
+            sender_email = os.getenv("SENDER_EMAIL")
+            sender_password = os.getenv("SENDER_EMAIL_PASSWORD")
+            recipient_emails = json.loads(os.getenv("RECIPIENT_EMAILS"))
+            
+            if all([sender_email, sender_password, recipient_emails]):
+                msg = MIMEMultipart()
+                msg['From'] = sender_email
+                msg['To'] = ", ".join(recipient_emails)
+                
+                mode = "DENGAN FORCE CONVERT" if use_force_convert else "NORMAL"
+                msg['Subject'] = f"[verval-pupuk2] REKAP KLASTER BERHASIL {mode}"
+                
+                email_body = f"""
+                <html>
+                    <body>
+                        <h2 style="color: green;">✅ REKAP KLASTER BERHASIL {mode}</h2>
+                        <div style="background-color: #f0f8f0; padding: 15px; border-radius: 5px;">
+                            <h3>📊 STATISTIK:</h3>
+                            <p>• Total data: {len(combined_df):,}</p>
+                            <p>• MENUNGGU_KEC: {status_counts.get('MENUNGGU_KEC', 0):,}</p>
+                            <p>• DISETUJUI_KEC: {status_counts.get('DISETUJUI_KEC', 0):,}</p>
+                            <p>• DISETUJUI_PUSAT: {status_counts.get('DISETUJUI_PUSAT', 0):,}</p>
+                            <p>• Sheet Kecamatan: {kecamatan_sheet_count}</p>
+                            <p>• Sheet Kios: {kios_sheet_count}</p>
+                            <h3>🔗 LINK:</h3>
+                            <p>• Kecamatan: <a href="{KECAMATAN_SHEET_URL}">{KECAMATAN_SHEET_URL}</a></p>
+                            <p>• Kios: <a href="{KIOS_SHEET_URL}">{KIOS_SHEET_URL}</a></p>
+                        </div>
+                    </body>
+                </html>
+                """
+                
+                msg.attach(MIMEText(email_body, 'html'))
+                
+                with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                
+                print(f"✅ Email notifikasi terkirim")
+                
+        except Exception as e:
+            print(f"⚠️  Gagal kirim email: {str(e)}")
+        
+        print(f"\n🎉 PROSES SELESAI DENGAN SUKSES!")
 
     except Exception as e:
         print(f"\n❌ ERROR: {str(e)}")
@@ -613,4 +538,26 @@ REKAP DATA BERDASARKAN KLASTER STATUS BERHASIL ✓
 # JALANKAN FUNGSI UTAMA
 # ============================
 if __name__ == "__main__":
-    process_verval_pupuk_by_klaster()
+    # Tanya user apakah mau pakai force convert
+    print("=" * 80)
+    print("🔧 PILIH MODE:")
+    print("1. Mode Normal (gunakan klasifikasi biasa)")
+    print("2. Mode Force Convert (ubah semua 'menunggu' ke 'disetujui')")
+    print("=" * 80)
+    
+    try:
+        choice = input("Pilih mode (1 atau 2, default 2): ").strip()
+        use_force_convert = choice != "1"
+        
+        if use_force_convert:
+            print("\n⚡ MENGGUNAKAN MODE FORCE CONVERT")
+            print("   Semua status 'menunggu' akan diubah menjadi 'disetujui'")
+        else:
+            print("\n📋 MENGGUNAKAN MODE NORMAL")
+        
+        process_verval_pupuk_with_force_fix(use_force_convert=use_force_convert)
+        
+    except KeyboardInterrupt:
+        print("\n\n❌ Proses dibatalkan oleh user")
+    except Exception as e:
+        print(f"\n❌ Error: {str(e)}")
