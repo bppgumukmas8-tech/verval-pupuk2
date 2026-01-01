@@ -146,41 +146,74 @@ def send_email_notification(subject, message, is_success=True):
 # ============================
 def klasifikasikan_status(status_value):
     """
-    Mengklasifikasikan status ke dalam klaster yang lebih sederhana
+    Versi sederhana: Abaikan kurung, fokus pada status utama
     """
     if pd.isna(status_value) or status_value is None:
         return "TANPA_STATUS"
     
     status_str = str(status_value).lower()
     
-    # Klaster utama
-    if 'disetujui' in status_str and 'pusat' in status_str and 'menunggu' not in status_str:
-        return "DISETUJUI_PUSAT"
-    elif 'disetujui' in status_str and 'kecamatan' in status_str:
-        return "DISETUJUI_KEC"
-    elif 'menunggu' in status_str and 'kecamatan' in status_str:
-        return "MENUNGGU_KEC"
-    elif 'menunggu' in status_str and 'pusat' in status_str:
-        return "MENUNGGU_PUSAT"
-    elif 'ditolak' in status_str and 'pusat' in status_str:
-        return "DITOLAK_PUSAT"
-    elif 'ditolak' in status_str and 'kecamatan' in status_str:
-        return "DITOLAK_KEC"
-    elif 'ditolak' in status_str:
-        return "DITOLAK_LAIN"
-    elif 'menunggu' in status_str:
-        return "MENUNGGU_LAIN"
-    elif 'disetujui' in status_str:
-        return "DISETUJUI_LAIN"
-    else:
-        # Ambil kata kunci pertama atau maksimal 2 kata
-        words = status_str.split()
-        if len(words) >= 2:
-            return f"{words[0].upper()}_{words[1].upper()}"
-        elif len(words) == 1:
-            return words[0].upper()
+    # **STEP 1: ABAIKAN TEKS DALAM KURUNG**
+    # Cari dan hapus teks dalam kurung apapun
+    bracket_start = status_str.find('(')
+    if bracket_start != -1:
+        bracket_end = status_str.find(')', bracket_start)
+        if bracket_end != -1:
+            # Hapus teks dari '(' sampai ')'
+            main_status = status_str[:bracket_start] + status_str[bracket_end+1:]
         else:
-            return "LAINNYA"
+            # Hanya ada '(' tanpa ')', hapus dari '(' sampai akhir
+            main_status = status_str[:bracket_start]
+    else:
+        main_status = status_str
+    
+    # Bersihkan spasi ganda
+    main_status = ' '.join(main_status.split())
+    
+    # **STEP 2: KLASIFIKASI BERDASARKAN STATUS UTAMA**
+    
+    # Kasus 1: MENUNGGU (hanya jika tidak ada "disetujui" di status utama)
+    if 'menunggu' in main_status and 'disetujui' not in main_status:
+        if 'kecamatan' in main_status:
+            return "MENUNGGU_KEC"
+        elif 'pusat' in main_status:
+            return "MENUNGGU_PUSAT"
+    
+    # Kasus 2: DISETUJUI
+    if 'disetujui' in main_status:
+        if 'pusat' in main_status:
+            return "DISETUJUI_PUSAT"
+        elif 'kecamatan' in main_status:
+            return "DISETUJUI_KEC"
+    
+    # Kasus 3: DITOLAK
+    if 'ditolak' in main_status:
+        if 'pusat' in main_status:
+            return "DITOLAK_PUSAT"
+        elif 'kecamatan' in main_status:
+            return "DITOLAK_KEC"
+    
+    # **STEP 3: FALLBACK - cek string asli jika tidak match**
+    if 'menunggu' in status_str and 'kecamatan' in status_str:
+        return "MENUNGGU_KEC"
+    if 'disetujui' in status_str and 'kecamatan' in status_str:
+        return "DISETUJUI_KEC"
+    if 'disetujui' in status_str and 'pusat' in status_str:
+        return "DISETUJUI_PUSAT"
+    if 'ditolak' in status_str and 'kecamatan' in status_str:
+        return "DITOLAK_KEC"
+    if 'ditolak' in status_str and 'pusat' in status_str:
+        return "DITOLAK_PUSAT"
+    
+    # **STEP 4: DEFAULT**
+    if 'menunggu' in status_str:
+        return "MENUNGGU_LAIN"
+    if 'disetujui' in status_str:
+        return "DISETUJUI_LAIN"
+    if 'ditolak' in status_str:
+        return "DITOLAK_LAIN"
+    
+    return "LAINNYA"
 
 def get_klaster_display_name(klaster):
     """
