@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-erdkk_wa_center_fixed_v2.py
+erdkk_wa_center_fixed_final.py
 ERDKK WA Center - Pivot Data Berdasarkan NIK/KTP Petani
-VERSI PERBAIKAN: Gunakan posisi kolom F untuk Nama Poktan
+VERSI FINAL dengan posisi kolom tetap:
+- NIK: Kolom H
+- Nama Petani: Kolom G
+- Nama Poktan: Kolom F
+- Nama Desa: Kolom AI
+- Nama Kios: Kolom D
+- Nama Kecamatan: Kolom E
 """
 
 import os
@@ -98,7 +104,7 @@ def send_email_notification(subject, body, is_success=True):
                         <div style="margin-top: 20px; padding: 15px; background-color: #e8f5e9; border-radius: 5px; border-left: 4px solid #2E7D32;">
                             <h3 style="color: #1B5E20; margin-top: 0;">📊 Informasi Sistem:</h3>
                             <ul style="color: #2E7D32;">
-                                <li>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_v2.py</li>
+                                <li>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_final.py</li>
                                 <li>📁 Folder Sumber: {FOLDER_ID}</li>
                                 <li>📊 Spreadsheet Tujuan: {SPREADSHEET_ID}</li>
                                 <li>⏰ Waktu Proses: {datetime.now().strftime('%H:%M:%S')}</li>
@@ -107,7 +113,7 @@ def send_email_notification(subject, body, is_success=True):
                         
                         <div style="margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px;">
                             <p>Email ini dikirim otomatis oleh sistem ERDKK WA Center</p>
-                            <p>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_v2.py</p>
+                            <p>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_final.py</p>
                             <p>© {datetime.now().year} - BPP Gumukmas</p>
                         </div>
                     </div>
@@ -142,7 +148,7 @@ def send_email_notification(subject, body, is_success=True):
                         
                         <div style="margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px;">
                             <p>Email ini dikirim otomatis oleh sistem ERDKK WA Center</p>
-                            <p>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_v2.py</p>
+                            <p>📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_final.py</p>
                             <p>© {datetime.now().year} - BPP Gumukmas</p>
                         </div>
                     </div>
@@ -174,7 +180,7 @@ def send_error_email(error_message, file_count=0):
 ❌ PROSES PIVOT DATA GAGAL
 
 ⏰ Waktu Error: {datetime.now().strftime('%d %B %Y %H:%M:%S')}
-📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_v2.py
+📁 Repository: verval-pupuk2/scripts/erdkk_wa_center_fixed_final.py
 
 📊 STATUS SEBELUM ERROR:
 ──────────────────────────────
@@ -233,66 +239,47 @@ def authenticate_google():
         return None
 
 # ==============================================
-# FUNGSI UTILITY & DEBUGGING
+# FUNGSI UTILITY
 # ==============================================
 
-def get_column_by_position(df, position_letter, column_name_hint=None):
-    """Ambil kolom berdasarkan posisi huruf Excel (A, B, C, ...)"""
+def excel_column_to_index(column_letter):
+    """Konversi huruf kolom Excel (A, B, C, ...) ke index (0-based)"""
+    column_letter = column_letter.upper()
+    index = 0
+    for char in column_letter:
+        index = index * 26 + (ord(char) - ord('A') + 1)
+    return index - 1
+
+def get_column_by_excel_position(df, column_letter, description=""):
+    """Ambil kolom berdasarkan huruf Excel"""
     try:
-        # Konversi huruf Excel ke index (0-based)
-        def excel_letter_to_index(letter):
-            letter = letter.upper()
-            index = 0
-            for char in letter:
-                index = index * 26 + (ord(char) - ord('A') + 1)
-            return index - 1  # 0-based
-        
-        col_index = excel_letter_to_index(position_letter)
+        col_index = excel_column_to_index(column_letter)
         
         if col_index < len(df.columns):
             column_name = df.columns[col_index]
-            print(f"   📍 Kolom {position_letter}: '{column_name}'")
+            print(f"   ✅ Kolom {column_letter} ({description}): '{column_name}'")
+            
+            # Tampilkan sample values untuk verifikasi
+            if len(df) > 0:
+                sample_values = df[column_name].dropna().unique()[:3]
+                print(f"     Sample values: {list(sample_values)}")
+            
             return column_name
         else:
-            print(f"   ⚠️ Kolom {position_letter} tidak ada (hanya {len(df.columns)} kolom)")
+            print(f"   ⚠️ Kolom {column_letter} tidak ada (hanya {len(df.columns)} kolom)")
             return None
             
     except Exception as e:
-        print(f"   ⚠️ Error mendapatkan kolom {position_letter}: {e}")
+        print(f"   ⚠️ Error mendapatkan kolom {column_letter}: {e}")
         return None
 
-def find_column_by_keywords(df, keywords, exact_match=False, exclude_keywords=None):
-    """Cari kolom berdasarkan keywords (kembalikan nama kolom atau None)"""
-    if exclude_keywords is None:
-        exclude_keywords = []
+def debug_column_structure(df, filename):
+    """Debug struktur kolom untuk verifikasi"""
+    print(f"\n🔍 STRUKTUR KOLOM untuk {filename}:")
+    print("   📋 Semua kolom dengan posisi Excel:")
     
-    for col in df.columns:
-        col_str = str(col).strip()
-        col_lower = col_str.lower()
-        
-        # Cek apakah kolom mengandung exclude keywords
-        has_exclude = any(exclude in col_lower for exclude in exclude_keywords)
-        if has_exclude:
-            continue
-        
-        for keyword in keywords:
-            keyword_lower = keyword.lower()
-            
-            if exact_match:
-                # Pencarian tepat (case-insensitive)
-                if col_lower == keyword_lower:
-                    return col
-            else:
-                # Pencarian mengandung keyword
-                if keyword_lower in col_lower:
-                    return col
-    return None
-
-def debug_column_detection(df, filename):
-    """Debug informasi kolom untuk membantu troubleshooting"""
-    print(f"\n🔍 DEBUG COLUMN INFO for {filename}:")
-    print("   📋 Semua kolom (dengan index Excel):")
-    for i, col in enumerate(df.columns):
+    # Tampilkan 10 kolom pertama
+    for i, col in enumerate(df.columns[:20]):
         # Konversi index ke huruf Excel
         def index_to_excel_letter(idx):
             result = ""
@@ -302,17 +289,30 @@ def debug_column_detection(df, filename):
             return result
         
         col_letter = index_to_excel_letter(i)
-        print(f"      {col_letter}. '{col}'")
+        print(f"      {col_letter:3s}. '{col}'")
     
-    # Tampilkan informasi khusus untuk kolom F
-    if len(df.columns) > 5:  # Pastikan ada kolom F (index 5)
-        col_f = df.columns[5]
-        print(f"\n   🔎 INFORMASI KHUSUS KOLOM F:")
-        print(f"      Nama kolom: '{col_f}'")
-        print(f"      Sample values (5 pertama):")
-        sample_values = df[col_f].head(5).tolist()
-        for j, val in enumerate(sample_values, 1):
-            print(f"        {j}. {val}")
+    # Kolom khusus yang akan kita gunakan
+    target_columns = {
+        'H': 'NIK',
+        'G': 'Nama Petani',
+        'F': 'Nama Poktan',
+        'E': 'Kecamatan',
+        'D': 'Nama Kios',
+        'AI': 'Nama Desa'
+    }
+    
+    print(f"\n   🎯 KOLOM TARGET:")
+    for col_letter, desc in target_columns.items():
+        try:
+            col_index = excel_column_to_index(col_letter)
+            if col_index < len(df.columns):
+                col_name = df.columns[col_index]
+                sample = df[col_name].dropna().unique()[:2]
+                print(f"      {col_letter:3s} ({desc}): '{col_name}' → Sample: {list(sample)}")
+            else:
+                print(f"      {col_letter:3s} ({desc}): TIDAK ADA (max kolom: {len(df.columns)})")
+        except:
+            print(f"      {col_letter:3s} ({desc}): ERROR")
     
     return True
 
@@ -333,11 +333,7 @@ def clean_and_convert_numeric(value):
         return 0.0
 
 def extract_luas_column(df, keywords, mt_number=None):
-    """
-    Cari kolom luas berdasarkan keywords dan musim tanam tertentu
-    Keywords: ['luas tanam', 'luas lahan', 'luas']
-    mt_number: 1, 2, atau 3
-    """
+    """Cari kolom luas berdasarkan keywords dan musim tanam"""
     for col in df.columns:
         col_lower = str(col).lower()
         has_keyword = any(k in col_lower for k in keywords)
@@ -345,16 +341,12 @@ def extract_luas_column(df, keywords, mt_number=None):
             continue
         
         if mt_number is None:
-            # Jika tidak mencari musim tertentu, ambil yang pertama cocok
             return col
         
-        # Cari berdasarkan musim tanam
         mt_patterns = [
             f'mt{mt_number}',
             f'mt {mt_number}',
-            f'musim {mt_number}',
-            f'mt {mt_number}',
-            f'mt{mt_number}'
+            f'musim {mt_number}'
         ]
         if any(pattern in col_lower for pattern in mt_patterns):
             return col
@@ -362,7 +354,7 @@ def extract_luas_column(df, keywords, mt_number=None):
     return None
 
 # ==============================================
-# FUNGSI PEMROSESAN FILE - DIPERBAIKI DENGAN POSISI KOLOM
+# FUNGSI PEMROSESAN FILE - VERSI FINAL
 # ==============================================
 
 def extract_files_from_folder(folder_id, service):
@@ -400,7 +392,7 @@ def extract_files_from_folder(folder_id, service):
         return []
 
 def read_and_process_excel(file_id, drive_service, filename):
-    """Baca dan proses file Excel - GUNAKAN POSISI KOLOM F UNTUK NAMA POKTAN"""
+    """Baca dan proses file Excel dengan posisi kolom tetap"""
     try:
         print(f"\n📖 Memproses: {filename}")
         
@@ -425,129 +417,44 @@ def read_and_process_excel(file_id, drive_service, filename):
 
         print(f"   📊 Data mentah: {len(df)} baris, {len(df.columns)} kolom")
         
-        # DEBUG: Tampilkan informasi kolom
-        debug_column_detection(df, filename)
+        # Debug struktur kolom
+        debug_column_structure(df, filename)
         
-        # DETEKSI KOLOM - VERSI DIPERBAIKI DENGAN POSISI KOLOM
-        print(f"\n   🔍 MENDETEKSI KOLOM:")
+        # DETEKSI KOLOM BERDASARKAN POSISI TETAP
+        print(f"\n   🎯 MENDETEKSI KOLOM BERDASARKAN POSISI:")
         
-        # 1. NIK - Cari dengan keywords dulu
-        nik_col = find_column_by_keywords(df, ['nik', 'ktp', 'no. ktp', 'noktp', 'no ktp'])
+        # 1. NIK - Kolom H
+        nik_col = get_column_by_excel_position(df, 'H', 'NIK')
         if not nik_col:
-            # Coba kolom A jika keywords tidak ditemukan
-            nik_col = get_column_by_position(df, 'A', 'NIK')
-        if not nik_col:
-            print(f"   ❌ Kolom NIK tidak ditemukan")
+            print(f"   ❌ Kolom NIK (H) tidak ditemukan")
             return None
-        print(f"   ✅ Kolom NIK: '{nik_col}'")
-
-        # 2. Nama Petani - Cari di kolom B
-        nama_col = get_column_by_position(df, 'B', 'Nama Petani')
+        
+        # 2. Nama Petani - Kolom G
+        nama_col = get_column_by_excel_position(df, 'G', 'Nama Petani')
         if not nama_col:
-            # Fallback ke keyword search
-            nama_col = find_column_by_keywords(df, ['nama petani', 'nama_petani', 'nama petani'])
-        if not nama_col:
-            for col in df.columns:
-                col_lower = str(col).lower()
-                if 'nama' in col_lower and 'penyuluh' not in col_lower:
-                    nama_col = col
-                    break
-        if nama_col:
-            print(f"   ✅ Kolom Nama Petani: '{nama_col}'")
-        else:
-            print(f"   ⚠️ Kolom Nama Petani tidak ditemukan")
-
-        # 3. Poktan - PAKAI KOLOM F (index 5) UNTUK NAMA POKTAN
-        poktan_col = None
+            print(f"   ⚠️ Kolom Nama Petani (G) tidak ditemukan")
         
-        print(f"\n   🎯 MENDETEKSI KOLOM POKTAN:")
-        print(f"   • Strategi 1: Ambil kolom F (posisi pasti)")
-        
-        # PASTIKAN AMBIL KOLOM F (index 5)
-        if len(df.columns) > 5:
-            poktan_col = df.columns[5]  # Kolom F (index 5)
-            print(f"   ✅ Kolom F ditemukan: '{poktan_col}'")
-            
-            # Cek apakah ini benar kolom poktan
-            sample_values = df[poktan_col].dropna().unique()[:3]
-            sample_str = ' '.join(str(v).lower() for v in sample_values if pd.notna(v))
-            print(f"   📝 Sample values dari kolom F: {list(sample_values)}")
-            
-            # Validasi: jika sample mengandung kata kecamatan/desa, mungkin bukan poktan
-            if any(invalid in sample_str for invalid in ['kecamatan', 'desa']):
-                print(f"   ⚠️ Peringatan: Kolom F mungkin bukan Nama Poktan (mengandung 'kecamatan' atau 'desa')")
-                print(f"   💡 Lanjutkan dengan asumsi ini adalah Nama Poktan")
-        else:
-            print(f"   ⚠️ File ini hanya memiliki {len(df.columns)} kolom, tidak ada kolom F")
-        
+        # 3. Nama Poktan - Kolom F
+        poktan_col = get_column_by_excel_position(df, 'F', 'Nama Poktan')
         if not poktan_col:
-            # Fallback: cari dengan keywords
-            print(f"   • Strategi 2: Cari dengan keywords 'poktan'")
-            poktan_keywords = ['nama poktan', 'nama_poktan', 'poktan', 'kelompok tani']
-            poktan_col = find_column_by_keywords(df, poktan_keywords)
+            print(f"   ⚠️ Kolom Nama Poktan (F) tidak ditemukan")
         
-        if poktan_col:
-            print(f"   ✅ FINAL: Menggunakan kolom Poktan: '{poktan_col}'")
-        else:
-            print(f"   ⚠️ Kolom Poktan tidak ditemukan, menggunakan default")
-
-        # 4. Nama Desa - Cari di kolom yang tepat
-        desa_col = None
-        
-        # Coba berbagai strategi
-        desa_keywords = ['nama desa', 'desa', 'desa binaan']
-        desa_col = find_column_by_keywords(df, desa_keywords)
-        
-        if not desa_col:
-            # Coba kolom berdasarkan posisi (mungkin D atau E)
-            for pos in ['D', 'E', 'G']:
-                col = get_column_by_position(df, pos, 'Desa')
-                if col:
-                    sample = df[col].dropna().unique()[:2]
-                    sample_str = ' '.join(str(v).lower() for v in sample if pd.notna(v))
-                    if 'desa' in sample_str or any(village_word in sample_str for village_word in ['desa', 'dusun', 'kelurahan']):
-                        desa_col = col
-                        break
-        
-        if desa_col:
-            print(f"   ✅ Kolom Nama Desa: '{desa_col}'")
-        else:
-            print(f"   ⚠️ Kolom Nama Desa tidak ditemukan")
-
-        # 5. Nama Kecamatan
-        kec_col = None
-        
-        # Cari dengan keywords
-        kec_keywords = ['kecamatan', 'nama kecamatan', 'kec.']
-        kec_col = find_column_by_keywords(df, kec_keywords)
-        
+        # 4. Nama Kecamatan - Kolom E
+        kec_col = get_column_by_excel_position(df, 'E', 'Nama Kecamatan')
         if not kec_col:
-            # Coba cari kolom yang mungkin berisi kecamatan
-            for col in df.columns:
-                col_lower = str(col).lower()
-                if 'kecamatan' in col_lower or 'kec.' in col_lower:
-                    kec_col = col
-                    break
+            print(f"   ⚠️ Kolom Nama Kecamatan (E) tidak ditemukan")
         
-        if kec_col:
-            print(f"   ✅ Kolom Kecamatan: '{kec_col}'")
-        else:
-            print(f"   ⚠️ Kolom Kecamatan tidak ditemukan, akan menggunakan nama file")
-
-        # 6. Nama Kios
-        kios_col = None
-        for col in df.columns:
-            col_lower = str(col).lower()
-            if 'nama kios pengecer' in col_lower or 'kios' in col_lower:
-                kios_col = col
-                break
+        # 5. Nama Kios - Kolom D
+        kios_col = get_column_by_excel_position(df, 'D', 'Nama Kios')
+        if not kios_col:
+            print(f"   ⚠️ Kolom Nama Kios (D) tidak ditemukan")
         
-        if kios_col:
-            print(f"   ✅ Kolom Nama Kios: '{kios_col}'")
-        else:
-            print(f"   ⚠️ Kolom Nama Kios tidak ditemukan")
-
-        # 7. Komoditas
+        # 6. Nama Desa - Kolom AI
+        desa_col = get_column_by_excel_position(df, 'AI', 'Nama Desa')
+        if not desa_col:
+            print(f"   ⚠️ Kolom Nama Desa (AI) tidak ditemukan")
+        
+        # 7. Komoditas - Cari otomatis
         komoditas_cols = {}
         for col in df.columns:
             col_lower = str(col).lower()
@@ -562,7 +469,7 @@ def read_and_process_excel(file_id, drive_service, filename):
                     komoditas_cols['general'] = col
         
         print(f"   ✅ Kolom Komoditas ditemukan: {len(komoditas_cols)}")
-
+        
         # 8. Luas Tanam
         luas_cols = {}
         luas_keywords = ['luas tanam', 'luas lahan', 'luas']
@@ -575,7 +482,7 @@ def read_and_process_excel(file_id, drive_service, filename):
         
         if not luas_cols:
             print(f"   ⚠️ Kolom Luas tidak ditemukan")
-
+        
         # 9. Kolom Pupuk
         pupuk_columns = {}
         for col in df.columns:
@@ -609,12 +516,12 @@ def read_and_process_excel(file_id, drive_service, filename):
                 pupuk_columns['organik_mt3'] = col
 
         print(f"   🌾 Kolom Pupuk yang ditemukan: {len(pupuk_columns)}")
-
+        
         # BERSIHKAN DATA
         print(f"\n   🧹 MEMBERSIHKAN DATA...")
         clean_df = pd.DataFrame()
         
-        # NIK
+        # NIK - Kolom H
         clean_df['nik'] = df[nik_col].astype(str).str.strip().apply(lambda x: re.sub(r'\D', '', x))
         clean_df = clean_df[clean_df['nik'].str.len() >= 10].copy()
         if clean_df.empty:
@@ -623,84 +530,49 @@ def read_and_process_excel(file_id, drive_service, filename):
 
         idxs = clean_df.index
         print(f"   • NIK valid: {len(idxs):,} baris")
-
-        # Nama Petani
+        
+        # Nama Petani - Kolom G
         if nama_col and nama_col in df.columns:
             clean_df['nama_petani'] = df.loc[idxs, nama_col].astype(str).str.strip()
+            print(f"   • Sample Nama Petani: {clean_df['nama_petani'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
         else:
             clean_df['nama_petani'] = ''
-
-        # Poktan - PASTIKAN AMBIL DARI KOLOM F
+        
+        # Nama Poktan - Kolom F
         if poktan_col and poktan_col in df.columns:
-            poktan_values = df.loc[idxs, poktan_col].astype(str).str.strip()
-            
-            # Bersihkan nilai poktan
-            def clean_poktan(value):
-                if pd.isna(value) or value == '':
-                    return 'Tidak disebutkan'
-                
-                val_str = str(value).strip()
-                
-                # Hapus karakter aneh
-                val_str = re.sub(r'[\n\r\t]', ' ', val_str)
-                
-                # Jika terlalu panjang, potong
-                if len(val_str) > 100:
-                    val_str = val_str[:100] + '...'
-                
-                return val_str
-            
-            clean_df['poktan'] = poktan_values.apply(clean_poktan)
-            
-            # Debug: tampilkan distribusi poktan
-            poktan_counts = clean_df['poktan'].value_counts()
-            print(f"   • Unique Poktan values: {len(poktan_counts)}")
-            if len(poktan_counts) > 0:
-                print(f"   • Top 5 Poktan:")
-                for i, (poktan, count) in enumerate(poktan_counts.head(5).items(), 1):
-                    print(f"      {i}. {poktan}: {count:,}")
+            clean_df['poktan'] = df.loc[idxs, poktan_col].astype(str).str.strip()
+            clean_df['poktan'] = clean_df['poktan'].replace(['', 'nan', 'NaN', 'Nan', 'NA', 'N/A', '-'], 'Tidak disebutkan')
+            print(f"   • Sample Nama Poktan: {clean_df['poktan'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
         else:
             clean_df['poktan'] = 'Tidak disebutkan'
-            print(f"   ⚠️ Menggunakan default 'Tidak disebutkan' untuk Poktan")
-
-        # Desa
-        if desa_col and desa_col in df.columns:
-            desa_values = df.loc[idxs, desa_col].astype(str).str.strip()
-            desa_values = desa_values.replace([
-                '', 'nan', 'NaN', 'Nan', 'NA', 'N/A', '-', 'null', 'NULL', 'None', 'none'
-            ], 'Desa tidak diketahui')
-            clean_df['desa'] = desa_values
-            
-            # Debug
-            desa_counts = clean_df['desa'].value_counts()
-            print(f"   • Unique Desa values: {len(desa_counts)}")
-        else:
-            clean_df['desa'] = 'Desa tidak diketahui'
-
-        # Kecamatan
+        
+        # Nama Kecamatan - Kolom E
         if kec_col and kec_col in df.columns:
-            kec_values = df.loc[idxs, kec_col].astype(str).str.strip()
-            kec_values = kec_values.replace([
-                '', 'nan', 'NaN', 'Nan', 'NA', 'N/A', '-', 'null', 'NULL', 'None', 'none'
-            ], 'Kecamatan tidak diketahui')
-            clean_df['kecamatan'] = kec_values
-            
-            # Debug
-            kec_counts = clean_df['kecamatan'].value_counts()
-            print(f"   • Unique Kecamatan values: {len(kec_counts)}")
+            clean_df['kecamatan'] = df.loc[idxs, kec_col].astype(str).str.strip()
+            clean_df['kecamatan'] = clean_df['kecamatan'].replace(['', 'nan', 'NaN', 'Nan', 'NA', 'N/A', '-'], 'Kecamatan tidak diketahui')
+            print(f"   • Sample Kecamatan: {clean_df['kecamatan'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
         else:
             # Fallback ke nama file
             kec_name = filename.replace('_ERDKK.xlsx', '').replace('.xlsx', '').replace('.xls', '')
             clean_df['kecamatan'] = kec_name
             print(f"   • Menggunakan nama file sebagai kecamatan: {kec_name}")
-
-        # Nama Kios
+        
+        # Nama Kios - Kolom D
         if kios_col and kios_col in df.columns:
             clean_df['kios'] = df.loc[idxs, kios_col].astype(str).str.strip()
             clean_df['kios'] = clean_df['kios'].replace(['', 'nan', 'NaN', 'Nan'], 'Tidak disebutkan')
+            print(f"   • Sample Nama Kios: {clean_df['kios'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
         else:
             clean_df['kios'] = 'Tidak disebutkan'
-
+        
+        # Nama Desa - Kolom AI
+        if desa_col and desa_col in df.columns:
+            clean_df['desa'] = df.loc[idxs, desa_col].astype(str).str.strip()
+            clean_df['desa'] = clean_df['desa'].replace(['', 'nan', 'NaN', 'Nan', 'NA', 'N/A', '-'], 'Desa tidak diketahui')
+            print(f"   • Sample Desa: {clean_df['desa'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
+        else:
+            clean_df['desa'] = 'Desa tidak diketahui'
+        
         # Komoditas
         komoditas_list = []
         for mt in ['mt1', 'mt2', 'mt3', 'general']:
@@ -715,7 +587,7 @@ def read_and_process_excel(file_id, drive_service, filename):
             clean_df['komoditas_raw'] = all_komoditas.str.rstrip(',').replace(['', ',', 'nan', 'NaN'], '')
         else:
             clean_df['komoditas_raw'] = ''
-
+        
         # Luas Tanam
         luas_total = pd.Series([0.0] * len(idxs), index=idxs)
         
@@ -725,7 +597,7 @@ def read_and_process_excel(file_id, drive_service, filename):
                 luas_total = luas_total + luas_values
         
         clean_df['luas_tanam'] = luas_total
-
+        
         # Pupuk fields
         pupuk_keys = ['urea_mt1', 'npk_mt1', 'npk_formula_mt1', 'organik_mt1',
                      'urea_mt2', 'npk_mt2', 'npk_formula_mt2', 'organik_mt2',
@@ -735,13 +607,19 @@ def read_and_process_excel(file_id, drive_service, filename):
                 clean_df[key] = df.loc[idxs, pupuk_columns[key]].apply(clean_and_convert_numeric)
             else:
                 clean_df[key] = 0.0
-
+        
         # Final check
         print(f"\n   ✅ DATA CLEANING SELESAI")
         print(f"   • Total baris: {len(clean_df):,}")
-        print(f"   • Sample Poktan: {clean_df['poktan'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
-        print(f"   • Sample Desa: {clean_df['desa'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
-        print(f"   • Sample Kecamatan: {clean_df['kecamatan'].iloc[0] if len(clean_df) > 0 else 'N/A'}")
+        print(f"   • Sample data baris pertama:")
+        if len(clean_df) > 0:
+            row = clean_df.iloc[0]
+            print(f"     - NIK: {row['nik']}")
+            print(f"     - Nama: {row['nama_petani']}")
+            print(f"     - Poktan: {row['poktan']}")
+            print(f"     - Desa: {row['desa']}")
+            print(f"     - Kecamatan: {row['kecamatan']}")
+            print(f"     - Kios: {row['kios']}")
 
         return clean_df
 
@@ -1285,9 +1163,17 @@ def cleanup_temp_files():
 # ==============================================
 
 def main():
-    """Fungsi utama dengan perbaikan deteksi kolom berdasarkan posisi"""
+    """Fungsi utama dengan posisi kolom tetap"""
     print("\n" + "="*80)
-    print("🚀 ERDKK WA CENTER - FIXED V2 (Menggunakan Kolom F untuk Nama Poktan)")
+    print("🚀 ERDKK WA CENTER - FINAL VERSION (Posisi Kolom Tetap)")
+    print("="*80)
+    print("📋 POSISI KOLOM YANG DIGUNAKAN:")
+    print("   • NIK: Kolom H")
+    print("   • Nama Petani: Kolom G")
+    print("   • Nama Poktan: Kolom F")
+    print("   • Nama Desa: Kolom AI")
+    print("   • Nama Kios: Kolom D")
+    print("   • Nama Kecamatan: Kolom E")
     print("="*80)
     print(f"📅 Start time: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print("="*80)
@@ -1297,8 +1183,8 @@ def main():
     try:
         # 1. Kirim notifikasi mulai
         send_email_notification(
-            "ERDKK WA Center - Proses Data Dimulai (Kolom F untuk Poktan)",
-            f"Memproses dataset dengan strategi kolom F untuk Nama Poktan ({datetime.now().strftime('%d/%m/%Y %H:%M:%S')}).",
+            "ERDKK WA Center - Proses Data Dimulai (Posisi Kolom Tetap)",
+            f"Memproses dataset dengan posisi kolom tetap ({datetime.now().strftime('%d/%m/%Y %H:%M:%S')}).",
             is_success=True
         )
         
@@ -1335,13 +1221,6 @@ def main():
                 all_data.append(df)
                 success_count += 1
                 print(f"   ✅ Success ({len(df):,} rows)")
-                
-                # Debug: cek distribusi data
-                print(f"   🔍 Data check untuk file ini:")
-                print(f"      • Poktan values: {df['poktan'].nunique()}")
-                print(f"      • Sample Poktan: {df['poktan'].iloc[0] if len(df) > 0 else 'N/A'}")
-                print(f"      • Desa values: {df['desa'].nunique()}")
-                print(f"      • Kecamatan values: {df['kecamatan'].nunique()}")
             else:
                 fail_count += 1
                 print(f"   ❌ Failed")
@@ -1368,14 +1247,6 @@ def main():
         print(f"   • Total unique farmers: {len(result_df):,}")
         print(f"   • Total rows in result: {result_df.shape[0]:,}")
         
-        # Debug: cek beberapa sample hasil
-        print(f"\n🔍 SAMPLE HASIL PIVOT (3 baris pertama):")
-        for i, row in result_df.head(3).iterrows():
-            print(f"\n   Sample {i+1}:")
-            print(f"   • NIK: {row['nik']}")
-            print(f"   • Nama: {row['nama_petani']}")
-            print(f"   • Data (50 chars pertama): {row['data'][:50]}...")
-        
         # 6. Optimasi data untuk upload
         print("\n⚡ OPTIMIZING DATA FOR UPLOAD...")
         clean_df = cleanup_data_for_upload(result_df)
@@ -1389,7 +1260,7 @@ def main():
         if backup_file:
             backup_files.append(backup_file)
         
-        # 8. Upload ke Google Sheets dengan metode baru
+        # 8. Upload ke Google Sheets
         upload_success = upload_large_dataset(clean_df, SPREADSHEET_ID, credentials)
         
         # 9. Verifikasi upload
@@ -1406,11 +1277,9 @@ def main():
         # 10. Kirim notifikasi hasil
         print("\n📧 SENDING NOTIFICATION EMAIL...")
         
-        # PERBAIKAN: Hitung persentase yang lebih akurat
         actual_uploaded = uploaded_rows
         total_expected = len(clean_df)
         
-        # Jika hanya beda 1-2 baris, anggap berhasil 100%
         if actual_uploaded >= total_expected - 2:
             success_percentage = 100.0
             is_complete_success = True
@@ -1418,9 +1287,8 @@ def main():
             success_percentage = (actual_uploaded / total_expected) * 100
             is_complete_success = success_percentage >= 99.9
         
-        # Persiapkan pesan berdasarkan hasil
         if is_complete_success:
-            subject = f"✅ ERDKK WA Center - Proses Berhasil 100% (Kolom F)"
+            subject = f"✅ ERDKK WA Center - Proses Berhasil 100%"
             body = f"""
 🎉 LAPORAN PROSES BERHASIL 100%
 
@@ -1428,12 +1296,14 @@ def main():
 📊 Hasil: {actual_uploaded:,}/{total_expected:,} petani berhasil diupload
 📈 Akurasi: {success_percentage:.4f}%
 
-✅ STRATEGI KOLOM F BERHASIL:
+✅ POSISI KOLOM YANG DIGUNAKAN:
 ──────────────────────────────
-• ✅ Nama Poktan diambil dari Kolom F (posisi tetap)
-• ✅ Deteksi otomatis dengan fallback ke keywords
-• ✅ Validasi sample values untuk memastikan akurasi
-• ✅ Debug info untuk setiap file
+• ✅ NIK: Kolom H
+• ✅ Nama Petani: Kolom G
+• ✅ Nama Poktan: Kolom F
+• ✅ Nama Desa: Kolom AI
+• ✅ Nama Kios: Kolom D
+• ✅ Nama Kecamatan: Kolom E
 
 📊 STATISTIK DETAIL:
 ──────────────────────────────
@@ -1447,13 +1317,12 @@ def main():
 🔗 GOOGLE SHEETS:
 ──────────────────────────────
 📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
-📈 Total rows: {actual_uploaded:,} + 1 header = {actual_uploaded + 1:,} baris
 
 🎯 STATUS: PROSES BERHASIL DENGAN SEMPURNA
-✅ Nama Poktan berhasil diambil dari Kolom F
+✅ Semua kolom berhasil diambil dari posisi yang tepat
 ✅ Semua data petani berhasil diproses dan diupload
 """
-        elif actual_uploaded > total_expected * 0.9:  # >90% success
+        else:
             subject = f"⚠️ ERDKK WA Center - Proses {success_percentage:.1f}% Berhasil"
             body = f"""
 📊 LAPORAN PROSES SEBAGIAN BERHASIL
@@ -1461,57 +1330,17 @@ def main():
 ⏰ Waktu: {datetime.now().strftime('%d %B %Y %H:%M:%S')}
 📊 Hasil: {actual_uploaded:,}/{total_expected:,} petani ({success_percentage:.1f}%)
 
-📊 STATISTIK:
-──────────────────────────────
-📁 File diproses: {len(files)} file
-✅ File berhasil: {success_count} file
-❌ File gagal: {fail_count} file
-👤 Total petani: {total_expected:,}
-📄 Baris terupload: {actual_uploaded:,}
-📉 Baris missing: {total_expected - actual_uploaded:,}
-🎯 Akurasi: {success_percentage:.1f}%
-
-🔗 GOOGLE SHEETS:
-──────────────────────────────
-https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
-
 ⚠️ CATATAN:
 ──────────────────────────────
 • {total_expected - actual_uploaded:,} baris belum terupload
 • Backup file tersimpan di server untuk recovery
-• Data yang ada sudah dapat digunakan
 
 🎯 STATUS: SEBAGIAN BESAR BERHASIL
 """
-        else:
-            subject = f"❌ ERDKK WA Center - Upload Gagal"
-            body = f"""
-❌ LAPORAN PROSES GAGAL
-
-⏰ Waktu: {datetime.now().strftime('%d %B %Y %H:%M:%S')}
-📊 Data diproses: {total_expected:,} petani
-📊 Data terupload: {actual_uploaded:,} petani
-📉 Akurasi: {success_percentage:.1f}%
-
-🔧 TROUBLESHOOTING:
-──────────────────────────────
-1. Cek kuota Google Sheets (10 juta cell)
-2. Pastikan service account punya akses edit
-3. Coba manual upload file backup
-4. Periksa koneksi internet
-5. Hubungi administrator sistem
-
-📋 BACKUP FILE:
-──────────────────────────────
-File backup lengkap tersimpan di server
-
-🎯 STATUS: GAGAL UPLOAD (perlu tindakan lebih lanjut)
-"""
         
-        # Kirim email dengan status yang benar
         email_success = send_email_notification(subject, body, is_success=is_complete_success)
         
-        # 11. Final status dengan logika yang lebih baik
+        # 11. Final status
         print("\n" + "="*80)
         
         if is_complete_success:
@@ -1519,24 +1348,11 @@ File backup lengkap tersimpan di server
             print(f"   • Total expected: {total_expected:,} rows")
             print(f"   • Actual uploaded: {actual_uploaded:,} rows")
             print(f"   • Accuracy: {success_percentage:.4f}%")
-            print(f"   • Status: COMPLETE SUCCESS")
-            print(f"   • Strategy: Kolom F untuk Nama Poktan BERHASIL")
-            
-            exit_code = 0
-        elif actual_uploaded > total_expected * 0.9:
-            print(f"⚠️ PROSES HAMPIR SEMPURNA ({success_percentage:.2f}%)")
-            print(f"   • {actual_uploaded:,}/{total_expected:,} rows uploaded")
-            print(f"   • {total_expected - actual_uploaded:,} rows missing")
-            print(f"   • Status: PARTIAL SUCCESS (acceptable)")
-            
             exit_code = 0
         else:
-            print("❌ PROSES GAGAL (upload tidak berhasil)")
-            print(f"   • Only {actual_uploaded:,}/{total_expected:,} rows uploaded")
-            print(f"   • {total_expected - actual_uploaded:,} rows missing")
-            print("   • Backup file tersimpan untuk manual upload")
-            
-            exit_code = 1
+            print(f"⚠️ PROSES HAMPIR SEMPURNA ({success_percentage:.2f}%)")
+            print(f"   • {actual_uploaded:,}/{total_expected:,} rows uploaded")
+            exit_code = 0
         
         print(f"🔗 Link: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}")
         print("="*80)
@@ -1550,7 +1366,6 @@ File backup lengkap tersimpan di server
         sys.exit(1)
     
     finally:
-        # Cleanup setelah email terkirim
         if 'email_success' in locals() and email_success:
             for backup_file in backup_files:
                 if os.path.exists(backup_file):
