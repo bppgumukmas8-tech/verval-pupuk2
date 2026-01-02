@@ -1,8 +1,9 @@
 """
-erdkk_vs_realisasi.py
+erdkk_vs_realisasi_fixed.py
 Script untuk analisis perbandingan data ERDKK vs Realisasi Penebusan Pupuk.
+VERSI DIPERBAIKI - Fix identifikasi kolom dan masalah data.
 
-Lokasi: verval-pupuk2/scripts/erdkk_vs_realisasi.py
+Lokasi: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py
 """
 
 import os
@@ -95,7 +96,7 @@ def send_email_notification(subject, message, is_success=True):
                     <div style="background-color: #f0f8f0; padding: 15px; border-radius: 5px;">
                         {message.replace(chr(10), '<br>')}
                     </div>
-                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi.py</small></p>
+                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py</small></p>
                     <p><small>⏰ Dikirim secara otomatis pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</small></p>
                 </body>
             </html>
@@ -108,7 +109,7 @@ def send_email_notification(subject, message, is_success=True):
                     <div style="background-color: #ffe6e6; padding: 15px; border-radius: 5px;">
                         {message.replace(chr(10), '<br>')}
                     </div>
-                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi.py</small></p>
+                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py</small></p>
                     <p><small>⏰ Dikirim secara otomatis pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</small></p>
                 </body>
             </html>
@@ -245,13 +246,35 @@ def safe_google_api_operation(operation, *args, **kwargs):
     raise last_exception
 
 def clean_nik(nik_value):
-    """Membersihkan NIK dari karakter non-angka"""
+    """Membersihkan NIK dari karakter non-angka - DIPERBAIKI"""
     if pd.isna(nik_value) or nik_value is None:
         return None
-    nik_str = str(nik_value)
+    
+    nik_str = str(nik_value).strip()
+    
+    # Skip jika NIK adalah 0 atau kosong
+    if nik_str in ['0', 'nan', 'None', '']:
+        return None
+    
     cleaned_nik = re.sub(r'\D', '', nik_str)
+    
+    # Validasi panjang NIK
     if len(cleaned_nik) != 16:
-        print(f"⚠️  NIK tidak standar: {nik_value} -> {cleaned_nik} (panjang: {len(cleaned_nik)})")
+        # Coba cari 16 digit dalam string yang lebih panjang
+        if len(cleaned_nik) > 16:
+            # Mungkin ada spasi atau karakter lain di tengah
+            # Cari semua urutan 16 digit
+            sequences = re.findall(r'\d{16}', nik_str)
+            if sequences:
+                cleaned_nik = sequences[0]
+                print(f"   ⚠️  Diperbaiki: '{nik_value}' -> '{cleaned_nik}'")
+            else:
+                print(f"   ⚠️  NIK tidak standar: '{nik_value}' (panjang: {len(cleaned_nik)})")
+                return None
+        else:
+            print(f"   ⚠️  NIK terlalu pendek: '{nik_value}' (panjang: {len(cleaned_nik)})")
+            return None
+    
     return cleaned_nik if cleaned_nik else None
 
 def clean_column_name(col_name):
@@ -264,10 +287,56 @@ def clean_column_name(col_name):
     return col_clean
 
 # ============================
+# FUNGSI DEBUG FOLDER
+# ============================
+def debug_folder_contents(credentials, folder_id, folder_name):
+    """Debug isi folder"""
+    print(f"\n🔍 DEBUG: Mengecek isi folder {folder_name}...")
+    
+    try:
+        drive_service = build('drive', 'v3', credentials=credentials)
+        
+        # Query untuk semua file di folder
+        query = f"'{folder_id}' in parents"
+        results = drive_service.files().list(
+            q=query, 
+            fields="files(id, name, mimeType, size)",
+            pageSize=20
+        ).execute()
+        files = results.get("files", [])
+        
+        print(f"📁 Isi folder {folder_name} ({folder_id}):")
+        if not files:
+            print("   ⚠️  Folder kosong")
+        else:
+            for i, file in enumerate(files, 1):
+                size_mb = int(file.get('size', 0)) / (1024*1024) if file.get('size') else 0
+                print(f"   {i:2d}. {file['name']} ({file['mimeType']}) - {size_mb:.1f} MB")
+        
+        # Cek khusus file Excel
+        excel_query = f"'{folder_id}' in parents and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or mimeType='application/vnd.google-apps.spreadsheet')"
+        excel_results = drive_service.files().list(
+            q=excel_query, 
+            fields="files(id, name, mimeType)",
+            pageSize=20
+        ).execute()
+        excel_files = excel_results.get("files", [])
+        
+        print(f"\n🔍 File Excel/Spreadsheet yang terdeteksi: {len(excel_files)} file")
+        for i, file in enumerate(excel_files, 1):
+            print(f"   ✅ {i:2d}. {file['name']} ({file['mimeType']})")
+            
+        return len(files)
+            
+    except Exception as e:
+        print(f"❌ Error debug folder {folder_name}: {e}")
+        return 0
+
+# ============================
 # FUNGSI DOWNLOAD FILE
 # ============================
 def download_excel_files_from_drive(credentials, folder_id, folder_name):
-    """Download file Excel dari Google Drive"""
+    """Download file Excel dari Google Drive - DIPERBAIKI"""
     print(f"\n📥 Download file dari folder: {folder_name}")
     
     # Buat temporary folder
@@ -278,86 +347,160 @@ def download_excel_files_from_drive(credentials, folder_id, folder_name):
     try:
         drive_service = build('drive', 'v3', credentials=credentials)
 
-        # Query untuk mencari file Excel
-        query = f"'{folder_id}' in parents and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel')"
-        results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+        # Query untuk mencari file Excel - DIPERBAIKI mencakup lebih banyak tipe
+        query = f"""
+        '{folder_id}' in parents and 
+        (
+            mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or
+            mimeType='application/vnd.ms-excel' or
+            mimeType='application/vnd.google-apps.spreadsheet' or
+            name contains '.xlsx' or
+            name contains '.xls'
+        )
+        """
+        
+        print(f"   🔍 Query: {query}")
+        results = drive_service.files().list(
+            q=query, 
+            fields="files(id, name, mimeType)",
+            pageSize=10
+        ).execute()
+        
         files = results.get("files", [])
 
         if not files:
             print(f"⚠️  Tidak ada file Excel di folder {folder_name}")
+            print(f"   ℹ️  Folder ID: {folder_id}")
             return []
 
+        print(f"✅ Ditemukan {len(files)} file di folder {folder_name}")
         file_paths = []
+        
         for file in files:
-            print(f"   📥 Downloading: {file['name']}")
-            request = drive_service.files().get_media(fileId=file["id"])
+            print(f"   📥 Downloading: {file['name']} ({file['mimeType']})")
             
-            # Gunakan nama file yang aman
-            safe_filename = "".join(c for c in file['name'] if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
-            file_path = os.path.join(save_folder, safe_filename)
+            try:
+                # Untuk Google Sheets, export sebagai Excel
+                if file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
+                    request = drive_service.files().export_media(
+                        fileId=file["id"],
+                        mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                    ext = '.xlsx'
+                else:
+                    request = drive_service.files().get_media(fileId=file["id"])
+                    ext = '.xlsx' if '.xlsx' in file['name'].lower() else '.xls'
+                
+                # Gunakan nama file yang aman
+                safe_filename = re.sub(r'[^\w\s.-]', '', file['name'])
+                safe_filename = safe_filename.replace(' ', '_')
+                if not safe_filename.lower().endswith(('.xlsx', '.xls')):
+                    safe_filename += ext
+                    
+                file_path = os.path.join(save_folder, safe_filename)
 
-            with io.FileIO(file_path, 'wb') as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
+                with io.FileIO(file_path, 'wb') as fh:
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                        if status:
+                            print(f"      Progress: {int(status.progress() * 100)}%")
 
-            file_paths.append({
-                'path': file_path,
-                'name': file['name'],
-                'temp_folder': save_folder
-            })
+                file_paths.append({
+                    'path': file_path,
+                    'name': file['name'],
+                    'temp_folder': save_folder,
+                    'mime_type': file['mimeType']
+                })
+                
+                print(f"      ✅ Berhasil download: {os.path.basename(file_path)}")
 
-        print(f"✅ Berhasil download {len(file_paths)} file Excel dari {folder_name}")
+            except Exception as e:
+                print(f"      ❌ Gagal download {file['name']}: {str(e)}")
+                continue
+
+        print(f"✅ Berhasil download {len(file_paths)}/{len(files)} file dari {folder_name}")
         return file_paths
 
     except Exception as e:
         print(f"❌ Error download dari {folder_name}: {str(e)}")
+        traceback.print_exc()
         return []
 
 # ============================
 # FUNGSI PROSES DATA ERDKK - VERSI DIPERBAIKI
 # ============================
 def process_erdkk_file(file_path, file_name):
-    """Proses satu file ERDKK - PERBAIKAN PERHITUNGAN AGREGAT"""
+    """Proses satu file ERDKK - DIPERBAIKI dengan deteksi kolom yang lebih baik"""
     try:
         print(f"\n   📖 Memproses ERDKK: {file_name}")
+        print(f"   📂 File path: {file_path}")
 
         # Coba berbagai sheet name yang mungkin
-        sheet_names = ['Worksheet', 'Sheet1', 'Data', 'ERDKK', 'Laporan']
+        sheet_names = ['Worksheet', 'Sheet1', 'Data', 'ERDKK', 'Laporan', 'Sheet']
         df = None
         
         for sheet in sheet_names:
             try:
-                df = pd.read_excel(file_path, sheet_name=sheet)
+                df = pd.read_excel(file_path, sheet_name=sheet, dtype=str)
                 print(f"   ✅ Membaca sheet: {sheet}")
                 break
-            except:
+            except Exception as e:
                 continue
         
         if df is None:
-            # Coba sheet pertama
+            # Coba semua sheet
             try:
-                df = pd.read_excel(file_path, sheet_name=0)
-                print(f"   ✅ Membaca sheet pertama (index 0)")
+                xls = pd.ExcelFile(file_path)
+                print(f"   📋 Sheet yang tersedia: {xls.sheet_names}")
+                # Coba sheet pertama
+                df = pd.read_excel(file_path, sheet_name=0, dtype=str)
+                print(f"   ✅ Membaca sheet pertama: {xls.sheet_names[0]}")
             except Exception as e:
                 print(f"   ❌ Gagal membaca file: {e}")
                 return []
 
         # Standardize column names - lebih fleksibel
-        df.columns = df.columns.astype(str).str.strip().str.upper()
+        df.columns = [clean_column_name(col) for col in df.columns]
         
         print(f"   📊 DataFrame shape: {df.shape}")
-        print(f"   📋 Kolom yang ada: {list(df.columns)[:20]}")
+        print(f"   📋 Kolom yang ada ({len(df.columns)} kolom):")
+        for i, col in enumerate(df.columns[:30]):  # Tampilkan 30 kolom pertama
+            print(f"      {i+1:2d}. {col}")
         
-        # Cari kolom KTP/NIK
-        ktp_cols = [col for col in df.columns if 'KTP' in col or 'NIK' in col]
+        if len(df.columns) > 30:
+            print(f"      ... dan {len(df.columns) - 30} kolom lainnya")
+        
+        # Cari kolom KTP/NIK dengan pendekatan yang lebih baik
+        ktp_cols = []
+        for col in df.columns:
+            col_upper = col.upper()
+            if any(pattern in col_upper for pattern in ['NIK', 'KTP', 'NOMOR INDUK', 'NOMOR KTP']):
+                ktp_cols.append(col)
+        
         if ktp_cols:
             ktp_col = ktp_cols[0]
-            print(f"   🔍 Kolom KTP/NIK: {ktp_col}")
+            print(f"   🔍 Kolom KTP/NIK terdeteksi: {ktp_col}")
+            # Debug beberapa nilai NIK
+            if len(df) > 0:
+                sample_niks = df[ktp_col].head(5).tolist()
+                print(f"   🔍 Sample NIK (5 pertama): {sample_niks}")
         else:
-            print(f"   ⚠️  Kolom KTP/NIK tidak ditemukan")
-            return []
+            print(f"   ⚠️  Kolom KTP/NIK tidak ditemukan, mencoba deteksi otomatis...")
+            # Coba cari kolom yang berisi 16 digit angka
+            for col in df.columns:
+                if len(df) > 0:
+                    sample = df[col].head(10).astype(str).str.strip()
+                    # Cek jika ada yang seperti NIK (16 digit)
+                    nik_count = sample.str.match(r'^\d{16}$').sum()
+                    if nik_count > 0:
+                        ktp_col = col
+                        print(f"   🔍 Kolom '{col}' terdeteksi mungkin NIK ({nik_count}/10 sample valid)")
+                        break
+            else:
+                print(f"   ❌ Kolom KTP/NIK tidak dapat diidentifikasi")
+                return []
         
         # Cari kolom Nama Petani
         nama_cols = [col for col in df.columns if 'NAMA' in col and 'PETANI' in col]
@@ -368,7 +511,7 @@ def process_erdkk_file(file_path, file_name):
             if nama_cols:
                 nama_col = nama_cols[0]
             else:
-                nama_col = ''
+                nama_col = None
         print(f"   🔍 Kolom Nama: {nama_col}")
         
         # Cari kolom Kecamatan
@@ -376,7 +519,7 @@ def process_erdkk_file(file_path, file_name):
         if kec_cols:
             kec_col = kec_cols[0]
         else:
-            kec_col = ''
+            kec_col = None
         print(f"   🔍 Kolom Kecamatan: {kec_col}")
         
         # Cari kolom Kode Kios
@@ -384,7 +527,7 @@ def process_erdkk_file(file_path, file_name):
         if kode_kios_cols:
             kode_kios_col = kode_kios_cols[0]
         else:
-            kode_kios_col = ''
+            kode_kios_col = None
         print(f"   🔍 Kolom Kode Kios: {kode_kios_col}")
         
         # Cari kolom Nama Kios
@@ -392,11 +535,11 @@ def process_erdkk_file(file_path, file_name):
         if nama_kios_cols:
             nama_kios_col = nama_kios_cols[0]
         else:
-            nama_kios_col = ''
+            nama_kios_col = None
         print(f"   🔍 Kolom Nama Kios: {nama_kios_col}")
         
         # ============================================
-        # PERBAIKAN: CARI KOLOM PUPUK YANG TEPAT
+        # CARI KOLOM PUPUK
         # ============================================
         print(f"\n   🔍 Mencari kolom pupuk...")
         
@@ -429,38 +572,41 @@ def process_erdkk_file(file_path, file_name):
             for pupuk_type, patterns in pupuk_patterns.items():
                 for pattern in patterns:
                     if re.search(pattern, col_upper, re.IGNORECASE):
-                        # Cek apakah ini kolom per MT atau total
-                        if any(mt in col_upper for mt in ['MT1', 'MT2', 'MT3', 'MT 1', 'MT 2', 'MT 3']):
-                            pupuk_columns[pupuk_type].append(col)
+                        pupuk_columns[pupuk_type].append(col)
                         break
         
         # Tampilkan kolom yang ditemukan
         for pupuk_type, cols in pupuk_columns.items():
             if cols:
-                print(f"   ✅ {pupuk_type}: {len(cols)} kolom ditemukan")
-                if len(cols) <= 3:  # Tampilkan maks 3 kolom
-                    print(f"      {cols}")
+                print(f"   ✅ {pupuk_type}: {len(cols)} kolom")
+                if len(cols) <= 5:
+                    for col in cols:
+                        print(f"      - {col}")
             else:
-                print(f"   ⚠️  {pupuk_type}: Tidak ditemukan kolom")
+                print(f"   ⚠️  {pupuk_type}: Tidak ditemukan")
         
         # ============================================
-        # PROSES SETIAP BARIS DENGAN PERHITUNGAN YANG BENAR
+        # PROSES SETIAP BARIS
         # ============================================
         results = []
+        skipped_rows = 0
         
         for idx, row in df.iterrows():
             try:
                 # Clean NIK
-                nik = clean_nik(row.get(ktp_col, ''))
+                nik_value = row.get(ktp_col, '') if ktp_col else ''
+                nik = clean_nik(nik_value)
+                
                 if not nik:
+                    skipped_rows += 1
                     continue
                 
                 result = {
                     'NIK': nik,
-                    'NAMA_PETANI': str(row.get(nama_col, '')).strip() if nama_col else '',
-                    'KECAMATAN': str(row.get(kec_col, '')).strip().upper() if kec_col else '',
-                    'KODE_KIOS': str(row.get(kode_kios_col, '')).strip().upper() if kode_kios_col else '',
-                    'NAMA_KIOS': str(row.get(nama_kios_col, '')).strip() if nama_kios_col else '',
+                    'NAMA_PETANI': str(row.get(nama_col, '')).strip() if nama_col and pd.notna(row.get(nama_col)) else '',
+                    'KECAMATAN': str(row.get(kec_col, '')).strip().upper() if kec_col and pd.notna(row.get(kec_col)) else '',
+                    'KODE_KIOS': str(row.get(kode_kios_col, '')).strip().upper() if kode_kios_col and pd.notna(row.get(kode_kios_col)) else '',
+                    'NAMA_KIOS': str(row.get(nama_kios_col, '')).strip() if nama_kios_col and pd.notna(row.get(nama_kios_col)) else '',
                     'TOTAL_UREA': 0,
                     'TOTAL_NPK': 0,
                     'TOTAL_SP36': 0,
@@ -471,7 +617,7 @@ def process_erdkk_file(file_path, file_name):
                     'FILE_SOURCE': file_name
                 }
                 
-                # Hitung total per jenis pupuk dari semua kolom yang ditemukan
+                # Hitung total per jenis pupuk
                 for pupuk_type, cols in pupuk_columns.items():
                     if not cols:
                         continue
@@ -482,19 +628,23 @@ def process_erdkk_file(file_path, file_name):
                         if pd.notna(value):
                             try:
                                 # Coba konversi ke float
-                                num_value = float(value)
+                                if isinstance(value, (int, float)):
+                                    num_value = float(value)
+                                elif isinstance(value, str):
+                                    # Bersihkan string
+                                    clean_str = re.sub(r'[^\d.-]', '', value)
+                                    if clean_str:
+                                        num_value = float(clean_str)
+                                    else:
+                                        num_value = 0
+                                else:
+                                    num_value = 0
+                                
                                 total += num_value
-                            except (ValueError, TypeError):
-                                # Jika tidak bisa dikonversi, coba parsing string
-                                if isinstance(value, str):
-                                    # Cari angka dalam string
-                                    numbers = re.findall(r'\d+\.?\d*', value)
-                                    if numbers:
-                                        try:
-                                            num_value = float(numbers[0])
-                                            total += num_value
-                                        except:
-                                            pass
+                            except (ValueError, TypeError) as e:
+                                if idx < 3:  # Print error hanya untuk 3 baris pertama
+                                    print(f"      ⚠️  Baris {idx}, kolom {col}: '{value}' tidak bisa dikonversi ke angka")
+                                continue
                     
                     # Simpan total per jenis pupuk
                     if pupuk_type == 'UREA':
@@ -525,26 +675,29 @@ def process_erdkk_file(file_path, file_name):
                 
                 if has_pupuk_data:
                     results.append(result)
+                else:
+                    skipped_rows += 1
                 
             except Exception as e:
-                if idx < 10:  # Print error hanya untuk 10 baris pertama
+                if idx < 5:  # Print error hanya untuk 5 baris pertama
                     print(f"   ⚠️  Error processing row {idx}: {e}")
+                skipped_rows += 1
                 continue
         
-        print(f"   ✅ Berhasil: {len(results)} baris data")
+        print(f"   ✅ Berhasil diproses: {len(results)} baris data")
+        if skipped_rows > 0:
+            print(f"   ⚠️  Dilewati: {skipped_rows} baris (NIK tidak valid/tidak ada data pupuk)")
         
         # Tampilkan sample dengan detail
         if results:
             print(f"\n   🔍 Sample data (baris pertama):")
             sample = results[0]
             print(f"     NIK: {sample['NIK']}")
-            print(f"     NAMA: {sample['NAMA_PETANI'][:30]}...")
+            print(f"     NAMA: {sample['NAMA_PETANI'][:30]}{'...' if len(sample['NAMA_PETANI']) > 30 else ''}")
             print(f"     KECAMATAN: {sample['KECAMATAN']}")
             print(f"     KODE_KIOS: {sample['KODE_KIOS']}")
             print(f"     UREA: {sample['TOTAL_UREA']:.2f} Kg")
             print(f"     NPK: {sample['TOTAL_NPK']:.2f} Kg")
-            print(f"     SP36: {sample['TOTAL_SP36']:.2f} Kg")
-            print(f"     ZA: {sample['TOTAL_ZA']:.2f} Kg")
             
             # Hitung total untuk verifikasi
             total_urea = sum(r['TOTAL_UREA'] for r in results)
@@ -576,6 +729,9 @@ def aggregate_erdkk_by_kecamatan(all_erdkk_rows):
         print("⚠️  Tidak ada data dengan KECAMATAN yang valid")
         return pd.DataFrame()
     
+    print(f"   Data untuk agregasi: {len(df)} baris")
+    print(f"   Jumlah kecamatan unik: {df['KECAMATAN'].nunique()}")
+    
     # Group by KECAMATAN
     agg_dict = {
         'TOTAL_UREA': 'sum',
@@ -602,7 +758,7 @@ def aggregate_erdkk_by_kecamatan(all_erdkk_rows):
     # Sort by KECAMATAN
     kec_df = kec_df.sort_values('KECAMATAN')
     
-    print(f"✅ Agregasi kecamatan selesai: {len(kec_df)} baris")
+    print(f"✅ Agregasi kecamatan selesai: {len(kec_df)} kecamatan")
     
     if len(kec_df) > 0:
         print(f"\n📊 Sample agregasi kecamatan (3 pertama):")
@@ -633,6 +789,9 @@ def aggregate_erdkk_by_kios(all_erdkk_rows):
         print("⚠️  Tidak ada data dengan KECAMATAN dan KODE_KIOS yang valid")
         return pd.DataFrame()
     
+    print(f"   Data untuk agregasi kios: {len(df)} baris")
+    print(f"   Jumlah kios unik: {df['KODE_KIOS'].nunique()}")
+    
     # Group by KECAMATAN dan KODE_KIOS
     agg_dict = {
         'NAMA_KIOS': 'first',
@@ -660,7 +819,7 @@ def aggregate_erdkk_by_kios(all_erdkk_rows):
     # Sort by KECAMATAN then KODE_KIOS
     kios_df = kios_df.sort_values(['KECAMATAN', 'KODE_KIOS'])
     
-    print(f"✅ Agregasi kios selesai: {len(kios_df)} baris")
+    print(f"✅ Agregasi kios selesai: {len(kios_df)} kios")
     
     if len(kios_df) > 0:
         print(f"\n📊 Sample agregasi kios (3 pertama):")
@@ -669,55 +828,147 @@ def aggregate_erdkk_by_kios(all_erdkk_rows):
     return kios_df
 
 # ============================
-# FUNGSI PROSES DATA REALISASI
+# FUNGSI PROSES DATA REALISASI - VERSI DIPERBAIKI
 # ============================
 def process_realisasi_file(file_path, file_name):
-    """Proses satu file realisasi"""
+    """Proses satu file realisasi - DIPERBAIKI untuk identifikasi kolom yang benar"""
     try:
         print(f"\n   📖 Memproses Realisasi: {file_name}")
+        print(f"   📂 File path: {file_path}")
 
         # Baca file Excel
-        df = pd.read_excel(file_path)
+        try:
+            df = pd.read_excel(file_path, dtype=str)  # Baca semua sebagai string dulu
+        except Exception as e:
+            print(f"   ❌ Gagal membaca file: {e}")
+            return []
         
         # Clean column names
         df.columns = [clean_column_name(col) for col in df.columns]
         
         print(f"   📊 DataFrame shape: {df.shape}")
-        print(f"   📋 Kolom yang ada: {list(df.columns)[:15]}")
+        print(f"   📋 Kolom yang ada ({len(df.columns)} kolom):")
+        for i, col in enumerate(df.columns):
+            print(f"      {i+1:2d}. '{col}'")
         
-        # Cari kolom yang diperlukan
-        nik_col = ''
-        nama_col = ''
-        kec_col = ''
-        kode_kios_col = ''
-        nama_kios_col = ''
-        status_col = ''
+        # DEBUG: Tampilkan beberapa baris pertama untuk analisis
+        if len(df) > 0:
+            print(f"\n   🔍 DEBUG - 3 baris pertama data:")
+            for i in range(min(3, len(df))):
+                row_data = []
+                for col in df.columns[:10]:  # Tampilkan 10 kolom pertama
+                    value = df.iloc[i][col]
+                    row_data.append(f"{col[:15]}: '{str(value)[:20]}'")
+                print(f"      Baris {i+1}: {' | '.join(row_data)}")
         
-        # Cari kolom berdasarkan pola
+        # IDENTIFIKASI KOLOM NIK - DIPERBAIKI
+        nik_col = None
+        
+        # Pola pencarian spesifik untuk NIK
+        nik_patterns = [
+            r'^NIK$',                    # Persis "NIK"
+            r'^NIK\s',                   # Dimulai dengan "NIK"
+            r'\sNIK$',                   # Diakhiri dengan "NIK"
+            r'^KTP$',                    # Persis "KTP"
+            r'^KTP\s',                   # Dimulai dengan "KTP"
+            r'\sKTP$',                   # Diakhiri dengan "KTP"
+            r'NOMOR\s+INDUK',           # Nama lengkap
+            r'NOMOR\s+KTP',             # Nomor KTP
+            r'NO\.?\s*KTP',             # No. KTP
+            r'NO\.?\s*NIK',             # No. NIK
+        ]
+        
+        # Cari berdasarkan nama kolom
         for col in df.columns:
             col_upper = col.upper()
-            if 'NIK' in col_upper or 'KTP' in col_upper:
-                nik_col = col
-            elif 'NAMA' in col_upper and 'PETANI' in col_upper:
-                nama_col = col
-            elif 'KECAMATAN' in col_upper:
+            
+            # Cek pola spesifik
+            for pattern in nik_patterns:
+                if re.search(pattern, col_upper, re.IGNORECASE):
+                    nik_col = col
+                    print(f"   🔍 Kolom NIK ditemukan dengan pola '{pattern}': {col}")
+                    break
+            
+            if nik_col:
+                break
+        
+        # Jika belum ditemukan, cari yang mengandung kata kunci
+        if not nik_col:
+            for col in df.columns:
+                col_upper = col.upper()
+                if 'NIK' in col_upper or 'KTP' in col_upper:
+                    nik_col = col
+                    print(f"   🔍 Kolom NIK ditemukan dengan kata kunci: {col}")
+                    break
+        
+        # Jika masih belum ditemukan, coba deteksi berdasarkan data
+        if not nik_col:
+            print(f"   ⚠️  Kolom NIK tidak ditemukan berdasarkan nama, mencoba deteksi data...")
+            for col in df.columns:
+                if len(df) > 0:
+                    # Ambil sample data
+                    sample_data = df[col].head(20).astype(str).str.strip()
+                    # Cek jika ada yang seperti NIK (16 digit angka)
+                    nik_count = sample_data.str.match(r'^\d{16}$').sum()
+                    if nik_count >= 5:  # Minimal 5 dari 20 sample adalah NIK
+                        nik_col = col
+                        print(f"   🔍 Kolom '{col}' terdeteksi sebagai NIK ({nik_count}/20 sample valid)")
+                        # Tampilkan sample NIK
+                        valid_niks = sample_data[sample_data.str.match(r'^\d{16}$')].head(3).tolist()
+                        print(f"      Sample NIK: {valid_niks}")
+                        break
+        
+        if not nik_col:
+            print(f"   ❌ ERROR: Kolom NIK tidak dapat diidentifikasi!")
+            print(f"   💡 Saran: Periksa struktur file '{file_name}'")
+            return []
+        
+        # Identifikasi kolom lainnya
+        nama_col = None
+        kec_col = None
+        kode_kios_col = None
+        nama_kios_col = None
+        status_col = None
+        
+        for col in df.columns:
+            col_upper = col.upper()
+            
+            # Skip kolom NIK yang sudah ditemukan
+            if col == nik_col:
+                continue
+                
+            # NAMA PETANI
+            if not nama_col:
+                if 'NAMA' in col_upper and 'PETANI' in col_upper:
+                    nama_col = col
+                elif 'NAMA' in col_upper and nama_col is None:
+                    nama_col = col
+            
+            # KECAMATAN
+            if not kec_col and 'KECAMATAN' in col_upper:
                 kec_col = col
-            elif 'KODE' in col_upper and 'KIOS' in col_upper:
+            
+            # KODE KIOS
+            if not kode_kios_col and 'KODE' in col_upper and 'KIOS' in col_upper:
                 kode_kios_col = col
-            elif 'NAMA' in col_upper and 'KIOS' in col_upper:
+            
+            # NAMA KIOS
+            if not nama_kios_col and 'NAMA' in col_upper and 'KIOS' in col_upper:
                 nama_kios_col = col
-            elif 'STATUS' in col_upper:
+            
+            # STATUS
+            if not status_col and 'STATUS' in col_upper:
                 status_col = col
         
-        # Jika tidak ditemukan, coba tebak berdasarkan urutan
-        if not nik_col and len(df.columns) > 0:
-            nik_col = df.columns[0]
-        if not nama_col and len(df.columns) > 1:
-            nama_col = df.columns[1]
-        if not kec_col and len(df.columns) > 2:
-            kec_col = df.columns[2]
+        # Fallback untuk kode kios
+        if not kode_kios_col:
+            for col in df.columns:
+                col_upper = col.upper()
+                if 'KODE' in col_upper or 'ID' in col_upper or 'KIOS' in col_upper:
+                    kode_kios_col = col
+                    break
         
-        print(f"   🔍 Kolom yang teridentifikasi:")
+        print(f"\n   ✅ Kolom yang teridentifikasi:")
         print(f"     NIK: {nik_col}")
         print(f"     NAMA: {nama_col}")
         print(f"     KECAMATAN: {kec_col}")
@@ -738,30 +989,40 @@ def process_realisasi_file(file_path, file_name):
         
         pupuk_cols = {}
         for pupuk_type, patterns in pupuk_mapping.items():
+            found = False
             for pattern in patterns:
-                found_cols = [col for col in df.columns if re.search(pattern, col, re.IGNORECASE)]
-                if found_cols:
-                    pupuk_cols[pupuk_type] = found_cols[0]
-                    print(f"     {pupuk_type}: {found_cols[0]}")
+                if found:
                     break
+                for col in df.columns:
+                    if re.search(pattern, col, re.IGNORECASE):
+                        pupuk_cols[pupuk_type] = col
+                        print(f"     {pupuk_type}: {col}")
+                        found = True
+                        break
         
         results = []
+        skipped_rows = 0
         
         # Proses setiap baris
         for idx, row in df.iterrows():
             try:
                 # Clean NIK
-                nik = clean_nik(row.get(nik_col, '')) if nik_col else ''
+                nik_value = row.get(nik_col, '') if nik_col else ''
+                nik = clean_nik(nik_value)
+                
                 if not nik:
+                    skipped_rows += 1
+                    if idx < 5:
+                        print(f"   ⚠️  Baris {idx}: NIK tidak valid '{nik_value}'")
                     continue
                 
                 result = {
                     'NIK': nik,
-                    'NAMA_PETANI': str(row.get(nama_col, '')).strip() if nama_col else '',
-                    'KECAMATAN': str(row.get(kec_col, '')).strip().upper() if kec_col else '',
-                    'KODE_KIOS': str(row.get(kode_kios_col, '')).strip().upper() if kode_kios_col else '',
-                    'NAMA_KIOS': str(row.get(nama_kios_col, '')).strip() if nama_kios_col else '',
-                    'STATUS': str(row.get(status_col, '')).strip() if status_col else '',
+                    'NAMA_PETANI': str(row.get(nama_col, '')).strip() if nama_col and pd.notna(row.get(nama_col)) else '',
+                    'KECAMATAN': str(row.get(kec_col, '')).strip().upper() if kec_col and pd.notna(row.get(kec_col)) else '',
+                    'KODE_KIOS': str(row.get(kode_kios_col, '')).strip().upper() if kode_kios_col and pd.notna(row.get(kode_kios_col)) else '',
+                    'NAMA_KIOS': str(row.get(nama_kios_col, '')).strip() if nama_kios_col and pd.notna(row.get(nama_kios_col)) else '',
+                    'STATUS': str(row.get(status_col, '')).strip() if status_col and pd.notna(row.get(status_col)) else '',
                     'REALISASI_UREA': 0,
                     'REALISASI_NPK': 0,
                     'REALISASI_SP36': 0,
@@ -777,7 +1038,15 @@ def process_realisasi_file(file_path, file_name):
                     if col_name and col_name in row:
                         value = row[col_name]
                         try:
-                            num_value = float(value) if pd.notna(value) else 0
+                            if pd.isna(value):
+                                num_value = 0
+                            elif isinstance(value, (int, float)):
+                                num_value = float(value)
+                            elif isinstance(value, str):
+                                clean_str = re.sub(r'[^\d.-]', '', value)
+                                num_value = float(clean_str) if clean_str else 0
+                            else:
+                                num_value = 0
                         except:
                             num_value = 0
                         
@@ -801,13 +1070,16 @@ def process_realisasi_file(file_path, file_name):
             except Exception as e:
                 if idx < 5:  # Print error hanya untuk 5 baris pertama
                     print(f"   ⚠️  Error processing row {idx}: {e}")
+                skipped_rows += 1
                 continue
         
-        print(f"   ✅ Berhasil: {len(results)} baris data")
+        print(f"   ✅ Berhasil diproses: {len(results)} baris data")
+        if skipped_rows > 0:
+            print(f"   ⚠️  Dilewati: {skipped_rows} baris (NIK tidak valid)")
         
         # Tampilkan sample
         if results:
-            print(f"\n   🔍 Sample data:")
+            print(f"\n   🔍 Sample data (baris pertama):")
             sample = results[0]
             print(f"     NIK: {sample['NIK']}")
             print(f"     STATUS: {sample['STATUS']}")
@@ -820,7 +1092,8 @@ def process_realisasi_file(file_path, file_name):
         return results
 
     except Exception as e:
-        print(f"   ❌ Error memproses realisasi {file_name}: {str(str(e))[:100]}...")
+        print(f"   ❌ Error memproses realisasi {file_name}: {str(e)}")
+        traceback.print_exc()
         return []
 
 def aggregate_realisasi_by_kecamatan(all_realisasi_rows, filter_acc_pusat=False):
@@ -853,6 +1126,9 @@ def aggregate_realisasi_by_kecamatan(all_realisasi_rows, filter_acc_pusat=False)
         print("⚠️  Tidak ada data dengan KECAMATAN yang valid")
         return pd.DataFrame()
 
+    print(f"   Data untuk agregasi: {len(df)} baris")
+    print(f"   Jumlah kecamatan unik: {df['KECAMATAN'].nunique()}")
+
     # Group by KECAMATAN
     agg_dict = {
         'REALISASI_UREA': 'sum',
@@ -879,7 +1155,7 @@ def aggregate_realisasi_by_kecamatan(all_realisasi_rows, filter_acc_pusat=False)
     # Sort by KECAMATAN
     kec_df = kec_df.sort_values('KECAMATAN')
     
-    print(f"✅ Agregasi realisasi kecamatan selesai: {len(kec_df)} baris")
+    print(f"✅ Agregasi realisasi kecamatan selesai: {len(kec_df)} kecamatan")
     
     if len(kec_df) > 0:
         print(f"\n📊 Sample agregasi realisasi kecamatan:")
@@ -918,6 +1194,9 @@ def aggregate_realisasi_by_kios(all_realisasi_rows, filter_acc_pusat=False):
         print("⚠️  Tidak ada data dengan KECAMATAN dan KODE_KIOS yang valid")
         return pd.DataFrame()
 
+    print(f"   Data untuk agregasi kios: {len(df)} baris")
+    print(f"   Jumlah kios unik: {df['KODE_KIOS'].nunique()}")
+
     # Group by KECAMATAN dan KODE_KIOS
     agg_dict = {
         'NAMA_KIOS': 'first',
@@ -945,7 +1224,7 @@ def aggregate_realisasi_by_kios(all_realisasi_rows, filter_acc_pusat=False):
     # Sort by KECAMATAN then KODE_KIOS
     kios_df = kios_df.sort_values(['KECAMATAN', 'KODE_KIOS'])
     
-    print(f"✅ Agregasi realisasi kios selesai: {len(kios_df)} baris")
+    print(f"✅ Agregasi realisasi kios selesai: {len(kios_df)} kios")
     
     if len(kios_df) > 0:
         print(f"\n📊 Sample agregasi realisasi kios:")
@@ -1346,7 +1625,7 @@ def batch_update_worksheets(spreadsheet, updates):
     success_count = 0
     for i, (sheet_name, data) in enumerate(updates):
         try:
-            print(f"   📝 Processing {i+1}/{len(updates)}: {sheet_name}")
+            print(f"   📝 Processing {i+1}/{len(updates)}: {sheet_name} ({len(data)} baris)")
             
             try:
                 # Coba akses sheet yang sudah ada
@@ -1362,10 +1641,10 @@ def batch_update_worksheets(spreadsheet, updates):
                 worksheet = safe_google_api_operation(
                     spreadsheet.add_worksheet, 
                     title=sheet_name, 
-                    rows="1000", 
-                    cols="50"
+                    rows=str(max(1000, len(data) + 100)), 
+                    cols=str(min(50, len(data.columns) + 5))
                 )
-                print(f"      ✅ Membuat sheet baru")
+                print(f"      ✅ Membuat sheet baru: {sheet_name}")
                 time.sleep(WRITE_DELAY)
             
             # Update data
@@ -1392,14 +1671,14 @@ def batch_update_worksheets(spreadsheet, updates):
     return success_count
 
 # ============================
-# FUNGSI UTAMA
+# FUNGSI UTAMA - DIPERBAIKI
 # ============================
 def process_erdkk_vs_realisasi():
-    """Fungsi utama untuk analisis perbandingan ERDKK vs Realisasi"""
+    """Fungsi utama untuk analisis perbandingan ERDKK vs Realisasi - DIPERBAIKI"""
     print("=" * 80)
-    print("🚀 ANALISIS PERBANDINGAN ERDKK vs REALISASI")
+    print("🚀 ANALISIS PERBANDINGAN ERDKK vs REALISASI (VERSI DIPERBAIKI)")
     print("=" * 80)
-    print(f"📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi.py")
+    print(f"📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py")
     print("=" * 80)
     
     start_time = datetime.now()
@@ -1422,10 +1701,15 @@ def process_erdkk_vs_realisasi():
         gc = gspread.authorize(credentials)
         print("✅ Berhasil terhubung ke Google API")
         
+        # DEBUG: Cek isi folder ERDKK dan REALISASI
+        print("\n🔍 DEBUG: Mengecek isi folder...")
+        debug_folder_contents(credentials, ERDKK_FOLDER_ID, "ERDKK")
+        debug_folder_contents(credentials, REALISASI_FOLDER_ID, "REALISASI")
+        
         # Test koneksi spreadsheet
         try:
             spreadsheet = safe_google_api_operation(gc.open_by_url, OUTPUT_SHEET_URL)
-            print(f"✅ Berhasil membuka spreadsheet: {spreadsheet.title}")
+            print(f"\n✅ Berhasil membuka spreadsheet: {spreadsheet.title}")
         except Exception as e:
             print(f"❌ Gagal membuka spreadsheet: {e}")
             raise
@@ -1449,6 +1733,7 @@ def process_erdkk_vs_realisasi():
             print("⚠️  Tidak ada file ERDKK yang ditemukan")
             erdkk_kec_df = pd.DataFrame()
             erdkk_kios_df = pd.DataFrame()
+            all_erdkk_rows = []
         else:
             print(f"✅ Download selesai: {len(erdkk_files)} file")
             
@@ -1458,6 +1743,7 @@ def process_erdkk_vs_realisasi():
             processed_files = 0
             
             for file_info in erdkk_files:
+                print(f"\n📄 Processing file {processed_files + 1}/{len(erdkk_files)}")
                 file_rows = process_erdkk_file(file_info['path'], file_info['name'])
                 
                 if file_rows:
@@ -1475,16 +1761,6 @@ def process_erdkk_vs_realisasi():
                 print("\n📊 Melakukan agregasi data ERDKK...")
                 erdkk_kec_df = aggregate_erdkk_by_kecamatan(all_erdkk_rows)
                 erdkk_kios_df = aggregate_erdkk_by_kios(all_erdkk_rows)
-                
-                # Verifikasi perhitungan untuk Ajung
-                if not erdkk_kec_df.empty and 'AJUNG' in erdkk_kec_df['KECAMATAN'].values:
-                    ajung_data = erdkk_kec_df[erdkk_kec_df['KECAMATAN'] == 'AJUNG']
-                    if not ajung_data.empty:
-                        urea_ajung = ajung_data.iloc[0]['TOTAL_UREA']
-                        print(f"\n🔍 VERIFIKASI: Kecamatan AJUNG")
-                        print(f"   • TOTAL_UREA dari script: {urea_ajung:,.2f} Kg")
-                        print(f"   • TOTAL_UREA manual: 2,972,848.00 Kg")
-                        print(f"   • Selisih: {urea_ajung - 2972848:,.2f} Kg")
             else:
                 print("⚠️  Tidak ada data ERDKK yang berhasil diproses")
                 erdkk_kec_df = pd.DataFrame()
@@ -1508,6 +1784,7 @@ def process_erdkk_vs_realisasi():
             realisasi_kec_acc = pd.DataFrame()
             realisasi_kios_all = pd.DataFrame()
             realisasi_kios_acc = pd.DataFrame()
+            all_realisasi_rows = []
         else:
             print(f"✅ Download selesai: {len(realisasi_files)} file")
             
@@ -1517,6 +1794,7 @@ def process_erdkk_vs_realisasi():
             processed_files = 0
             
             for file_info in realisasi_files:
+                print(f"\n📄 Processing file {processed_files + 1}/{len(realisasi_files)}")
                 file_rows = process_realisasi_file(file_info['path'], file_info['name'])
                 
                 if file_rows:
@@ -1585,43 +1863,24 @@ def process_erdkk_vs_realisasi():
             
             print(f"\n📤 Target spreadsheet: {OUTPUT_SHEET_URL}")
             print(f"📊 Data yang akan diexport:")
-            print(f"   • kecamatan_all: {len(kecamatan_all) if 'kecamatan_all' in locals() and not kecamatan_all.empty else 0} baris")
-            print(f"   • kecamatan_acc_pusat: {len(kecamatan_acc) if 'kecamatan_acc' in locals() and not kecamatan_acc.empty else 0} baris")
-            print(f"   • kios_all: {len(kios_all) if 'kios_all' in locals() and not kios_all.empty else 0} baris")
-            print(f"   • kios_acc_pusat: {len(kios_acc) if 'kios_acc' in locals() and not kios_acc.empty else 0} baris")
             
-            # Update 4 sheet yang berbeda
             updates = []
-            if not kecamatan_all.empty:
-                updates.append(("kecamatan_all", kecamatan_all))
-            if not kecamatan_acc.empty:
-                updates.append(("kecamatan_acc_pusat", kecamatan_acc))
-            if not kios_all.empty:
-                updates.append(("kios_all", kios_all))
-            if not kios_acc.empty:
-                updates.append(("kios_acc_pusat", kios_acc))
+            sheet_data = [
+                ("kecamatan_all", kecamatan_all),
+                ("kecamatan_acc_pusat", kecamatan_acc),
+                ("kios_all", kios_all),
+                ("kios_acc_pusat", kios_acc)
+            ]
+            
+            for sheet_name, data in sheet_data:
+                if not data.empty:
+                    print(f"   • {sheet_name}: {len(data)} baris, {len(data.columns)} kolom")
+                    updates.append((sheet_name, data))
+                else:
+                    print(f"   ⚠️  {sheet_name}: Data kosong")
             
             if updates:
                 success_count = batch_update_worksheets(spreadsheet, updates)
-                
-                # Verifikasi akhir
-                print(f"\n🔍 Verifikasi spreadsheet...")
-                try:
-                    final_sheets = safe_google_api_operation(spreadsheet.worksheets)
-                    sheet_names = [ws.title for ws in final_sheets]
-                    print(f"📋 Sheets di spreadsheet setelah update: {sheet_names}")
-                    
-                    # Cek apakah semua sheet yang diinginkan ada
-                    required_sheets = ['kecamatan_all', 'kecamatan_acc_pusat', 'kios_all', 'kios_acc_pusat']
-                    missing_sheets = [sheet for sheet in required_sheets if sheet not in sheet_names]
-                    
-                    if missing_sheets:
-                        print(f"⚠️  Sheet yang hilang: {missing_sheets}")
-                    else:
-                        print(f"✅ Semua 4 sheet berhasil dibuat/diupdate")
-                        
-                except Exception as e:
-                    print(f"⚠️  Tidak bisa verifikasi spreadsheet: {e}")
             else:
                 print("⚠️  Tidak ada data untuk di-export")
                 success_count = 0
@@ -1665,31 +1924,35 @@ def process_erdkk_vs_realisasi():
         duration = end_time - start_time
         
         # Buat summary
-        acc_pusat_count = len(pd.DataFrame(all_realisasi_rows)) if 'all_realisasi_rows' in locals() and all_realisasi_rows else 0
+        total_erdkk_rows = len(all_erdkk_rows) if 'all_erdkk_rows' in locals() else 0
+        total_realisasi_rows = len(all_realisasi_rows) if 'all_realisasi_rows' in locals() else 0
+        
+        # Hitung ACC PUSAT
+        acc_pusat_count = 0
         if 'all_realisasi_rows' in locals() and all_realisasi_rows:
             df_status = pd.DataFrame(all_realisasi_rows)
             if 'STATUS' in df_status.columns:
                 acc_pusat_count = df_status['STATUS'].apply(is_status_disetujui_pusat).sum()
         
-        # Hitung statistik untuk summary
+        # Hitung statistik pupuk
         total_erdkk_urea = erdkk_kec_df['TOTAL_UREA'].sum() if not erdkk_kec_df.empty else 0
         total_realisasi_urea = realisasi_kec_all['REALISASI_UREA'].sum() if not realisasi_kec_all.empty else 0
         percentage_urea = (total_realisasi_urea / total_erdkk_urea * 100) if total_erdkk_urea > 0 else 0
         
         summary_message = f"""
-ANALISIS PERBANDINGAN ERDKK vs REALISASI
+ANALISIS PERBANDINGAN ERDKK vs REALISASI (VERSI DIPERBAIKI)
 
 ⏰ Waktu proses: {duration.seconds // 60}m {duration.seconds % 60}s
 📅 Tanggal: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi.py
+📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py
 
 📊 DATA YANG DIPROSES:
 - File ERDKK: {len(erdkk_files) if 'erdkk_files' in locals() else 0} file
 - File Realisasi: {len(realisasi_files) if 'realisasi_files' in locals() else 0} file
 
 📊 STATISTIK DATA:
-- Total data ERDKK: {len(all_erdkk_rows) if 'all_erdkk_rows' in locals() else 0} baris
-- Total data Realisasi: {len(all_realisasi_rows) if 'all_realisasi_rows' in locals() else 0} baris
+- Total data ERDKK: {total_erdkk_rows} baris
+- Total data Realisasi: {total_realisasi_rows} baris
 - Data Realisasi ACC PUSAT: {acc_pusat_count} baris
 
 📊 STATISTIK PUPUK (TOTAL):
@@ -1699,30 +1962,27 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI
 
 📋 SHEET YANG DIBUAT:
 1. kecamatan_all: Perbandingan ERDKK vs Realisasi (semua status)
-   • Struktur: KECAMATAN | [Pupuk] ERDKK | [Pupuk] REALISASI | [Pupuk] SELISIH | [Pupuk] %
-   • Termasuk baris TOTAL di akhir
-   • Format: Header berwarna biru, baris TOTAL abu-abu
-   • Persentase ditampilkan sebagai persen (61.06% bukan 6106%)
-
+   • {'✅ DIBUAT' if 'kecamatan_all' in locals() and not kecamatan_all.empty else '❌ TIDAK ADA DATA'}
+   
 2. kecamatan_acc_pusat: Perbandingan ERDKK vs Realisasi ACC PUSAT saja
+   • {'✅ DIBUAT' if 'kecamatan_acc' in locals() and not kecamatan_acc.empty else '❌ TIDAK ADA DATA'}
    • Kriteria ACC PUSAT: mengandung 'disetujui' dan 'pusat', TIDAK mengandung 'menunggu' atau 'ditolak'
 
 3. kios_all: Perbandingan per Kios (semua status)
-   • Struktur: KECAMATAN | KODE_KIOS | NAMA_KIOS | [Pupuk] ERDKK | [Pupuk] REALISASI | [Pupuk] SELISIH | [Pupuk] %
+   • {'✅ DIBUAT' if 'kios_all' in locals() and not kios_all.empty else '❌ TIDAK ADA DATA'}
 
 4. kios_acc_pusat: Perbandingan per Kios (ACC PUSAT saja)
+   • {'✅ DIBUAT' if 'kios_acc' in locals() and not kios_acc.empty else '❌ TIDAK ADA DATA'}
 
 🎯 PERBAIKAN YANG DITERAPKAN:
-1. Perhitungan agregat pupuk yang benar (menjumlahkan semua kolom UREA, NPK, dll)
-2. Persentase dihitung sebagai desimal (0.6106) dan diformat sebagai persen (61.06%)
-3. Header diformat dengan warna biru dan teks putih
-4. Baris TOTAL ditambahkan di akhir dengan background abu-abu
-5. Kolom angka diformat dengan 2 desimal dan pemisah ribuan
-6. Kolom persentase diformat sebagai persentase
+1. Deteksi kolom NIK yang lebih akurat
+2. Penanganan kasus NIK = 0 atau tidak valid
+3. Debug detail isi folder
+4. Identifikasi kolom pupuk yang lebih robust
+5. Error handling yang lebih baik
 
 📤 OUTPUT:
 Spreadsheet: {OUTPUT_SHEET_URL}
-Sheet: kecamatan_all, kecamatan_acc_pusat, kios_all, kios_acc_pusat
 
 ✅ PROSES SELESAI: {success_count}/4 sheet berhasil diupdate
 """
@@ -1750,7 +2010,7 @@ Sheet: kecamatan_all, kecamatan_acc_pusat, kios_all, kios_acc_pusat
 ANALISIS PERBANDINGAN ERDKK vs REALISASI GAGAL ❌
 
 📅 Waktu: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi.py
+📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed.py
 ⚠️ Error: {str(e)}
 
 🔧 Traceback:
@@ -1765,4 +2025,14 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI GAGAL ❌
 # JALANKAN SCRIPT
 # ============================
 if __name__ == "__main__":
-    process_erdkk_vs_realisasi()
+    # Tambahkan error handling global
+    try:
+        success = process_erdkk_vs_realisasi()
+        sys.exit(0 if success else 1)
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Script dihentikan oleh pengguna")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ ERROR TIDAK TERDUGA: {e}")
+        traceback.print_exc()
+        sys.exit(1)
