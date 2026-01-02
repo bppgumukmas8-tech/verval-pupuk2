@@ -12,6 +12,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import time
 import random
+from gspread.exceptions import WorksheetNotFound  # Tambahkan import ini
 
 # ============================
 # KONFIGURASI
@@ -248,8 +249,11 @@ def process_sisa_kuota_wa():
         try:
             source_worksheet = execute_with_backoff(source_spreadsheet.worksheet, SOURCE_SHEET_NAME)
             print(f"✅ Sheet '{SOURCE_SHEET_NAME}' ditemukan")
+        except WorksheetNotFound:
+            print(f"❌ Sheet '{SOURCE_SHEET_NAME}' tidak ditemukan di spreadsheet")
+            raise
         except Exception as e:
-            print(f"❌ Sheet '{SOURCE_SHEET_NAME}' tidak ditemukan: {e}")
+            print(f"❌ Error saat mengakses sheet '{SOURCE_SHEET_NAME}': {e}")
             raise
         
         print("📊 Membaca data dari Google Sheets...")
@@ -366,17 +370,17 @@ def process_sisa_kuota_wa():
             target_worksheet = execute_with_backoff(target_spreadsheet.worksheet, TARGET_SHEET_NAME)
             print(f"   • Sheet '{TARGET_SHEET_NAME}' sudah ada, menghapus isi...")
             execute_with_backoff(target_worksheet.clear)
+        except WorksheetNotFound:
+            print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ditemukan, membuat baru...")
+            target_worksheet = execute_with_backoff(
+                target_spreadsheet.add_worksheet,
+                title=TARGET_SHEET_NAME,
+                rows=max(len(output_df) + 100, 1000),
+                cols=3
+            )
         except Exception as e:
-            if "not found" in str(e).lower():
-                print(f"   • Sheet '{TARGET_SHEET_NAME}' tidak ada, membuat baru...")
-                target_worksheet = execute_with_backoff(
-                    target_spreadsheet.add_worksheet,
-                    title=TARGET_SHEET_NAME,
-                    rows=max(len(output_df) + 100, 1000),
-                    cols=3
-                )
-            else:
-                raise e
+            print(f"❌ Error saat mengakses sheet target: {e}")
+            raise
         
         print("   • Menulis data ke Google Sheets...")
         
