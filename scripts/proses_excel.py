@@ -90,6 +90,64 @@ def list_files_in_folder(folder_id):
     return result.get("files", [])
 
 # ----------------------------------------------------
+# FUNGSI BANTUAN UNTUK PARSING TANGGAL
+# ----------------------------------------------------
+
+def parse_date_safe(date_str):
+    """Parse tanggal dengan format yang lebih fleksibel"""
+    if pd.isna(date_str):
+        return None
+    
+    # Coba berbagai format
+    date_formats = [
+        '%d-%m-%Y',  # 3-1-2026
+        '%d/%m/%Y',  # 3/1/2026
+        '%Y-%m-%d',  # 2026-01-03
+        '%Y/%m/%d',  # 2026/01/03
+        '%d %b %Y',  # 3 Jan 2026
+        '%d %B %Y',  # 3 Januari 2026
+    ]
+    
+    for fmt in date_formats:
+        try:
+            return datetime.strptime(str(date_str).strip(), fmt)
+        except ValueError:
+            continue
+    
+    # Jika tidak ada yang cocok, coba parsing dengan pandas
+    try:
+        return pd.to_datetime(date_str, errors='coerce')
+    except:
+        return None
+
+def extract_month_from_date(date_value):
+    """Ekstrak bulan dari tanggal dengan handling error"""
+    if pd.isna(date_value):
+        return None
+    
+    bulan_map = {
+        1: "Januari", 2: "Februari", 3: "Maret",
+        4: "April", 5: "Mei", 6: "Juni",
+        7: "Juli", 8: "Agustus", 9: "September",
+        10: "Oktober", 11: "November", 12: "Desember"
+    }
+    
+    try:
+        if isinstance(date_value, datetime):
+            month_num = date_value.month
+        else:
+            # Jika bukan datetime, coba konversi
+            parsed = parse_date_safe(str(date_value))
+            if parsed:
+                month_num = parsed.month
+            else:
+                return None
+        
+        return bulan_map.get(month_num, None)
+    except:
+        return None
+
+# ----------------------------------------------------
 # PROSES EXCEL → RETURN DATAFRAME & BULAN (MODIFIKASI)
 # ----------------------------------------------------
 
@@ -106,9 +164,8 @@ def process_excel(file_id, file_name):
     df.columns = df.iloc[0]
     df = df[1:].reset_index(drop=True)
 
-    # Cari kolom TGL INPUT untuk tanggal update
+    # Cari kolom TGL INPUT dan TGL TEBUS
     tgl_input_col = None
-    # Cari kolom TGL TEBUS untuk nama file
     tgl_tebus_col = None
     
     for col in df.columns:
@@ -129,41 +186,49 @@ def process_excel(file_id, file_name):
     # Rename kolom untuk konsistensi
     df.rename(columns={tgl_input_col: "TGL INPUT", tgl_tebus_col: "TGL TEBUS"}, inplace=True)
     
-    # Konversi ke datetime
-    df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
-    df["TGL TEBUS"] = pd.to_datetime(df["TGL TEBUS"], errors="coerce")
+    # Konversi tanggal dengan cara yang lebih aman
+    df["TGL INPUT"] = df["TGL INPUT"].apply(parse_date_safe)
+    df["TGL TEBUS"] = df["TGL TEBUS"].apply(parse_date_safe)
 
-    # Cari tanggal terbaru untuk masing-masing kolom
+    # Cari bulan untuk TGL TEBUS
+    bulan_tebus_list = []
+    for date_val in df["TGL TEBUS"]:
+        bulan = extract_month_from_date(date_val)
+        if bulan:
+            bulan_tebus_list.append(bulan)
+    
+    if not bulan_tebus_list:
+        add_log("⚠ Tidak ada bulan yang valid di TGL TEBUS", is_error=True)
+        return None
+    
+    # Tentukan bulan berdasarkan modus (yang paling sering muncul)
+    from collections import Counter
+    bulan_counter = Counter(bulan_tebus_list)
+    bulan_tebus = bulan_counter.most_common(1)[0][0]
+    add_log(f"  - Bulan TGL TEBUS: {bulan_tebus} (ditemukan {bulan_counter[bulan_tebus]} kali)")
+    
+    # Cari tanggal terbaru untuk TGL INPUT (untuk catatan update)
     latest_input = df["TGL INPUT"].max()
-    latest_tebus = df["TGL TEBUS"].max()
     
     if pd.isna(latest_input):
-        add_log("⚠ TGL INPUT kosong", is_error=True)
-        return None
-    
-    if pd.isna(latest_tebus):
-        add_log("⚠ TGL TEBUS kosong", is_error=True)
+        add_log("⚠ TGL INPUT tidak valid", is_error=True)
         return None
 
-    bulan_map = {
-        "January": "Januari", "February": "Februari", "March": "Maret",
-        "April": "April", "May": "Mei", "June": "Juni",
-        "July": "Juli", "August": "Agustus",
-        "September": "September", "October": "Oktober",
-        "November": "November", "December": "Desember"
-    }
+    # Bulan dari TGL INPUT (untuk logging saja)
+    bulan_input = extract_month_from_date(latest_input)
 
     return {
-        "bulan_input": bulan_map[latest_input.strftime("%B")],  # Untuk catatan update
-        "bulan_tebus": bulan_map[latest_tebus.strftime("%B")],  # Untuk nama file
+        "bulan_input": bulan_input,  # Hanya untuk logging
+        "bulan_tebus": bulan_tebus,  # Untuk nama file (berdasarkan modus TGL TEBUS)
         "latest_input": latest_input,  # Tanggal update terakhir
         "df": df,
         "source_file_id": file_id,
-        "source_name": file_name
+        "source_name": file_name,
+        "month_counts": dict(bulan_counter)  # Untuk debugging
     }
 
 # ----------------------------------------------------
-# MAIN (DITAMBAH LOGIKA GABUNG BULAN)
+# MAIN
 # ----------------------------------------------------
 
 def main():
@@ -182,16 +247,21 @@ def main():
             # Group berdasarkan bulan TGL TEBUS
             monthly_data[result["bulan_tebus"]].append(result["df"])
             monthly_sources[result["bulan_tebus"]].append(result)
+            add_log(f"  - File '{f['name']}' dikelompokkan ke bulan {result['bulan_tebus']}")
 
     # 2️⃣ GABUNG PER BULAN (berdasarkan TGL TEBUS)
     for bulan_tebus, df_list in monthly_data.items():
-        add_log(f"📊 Menggabungkan {len(df_list)} file untuk bulan {bulan_tebus} (berdasarkan TGL TEBUS)")
+        add_log(f"📊 Menggabungkan {len(df_list)} file untuk bulan {bulan_tebus}")
 
         # Gabungkan semua dataframe untuk bulan ini
         final_df = pd.concat(df_list, ignore_index=True)
         
         # Cari tanggal update terbaru dari TGL INPUT
         latest_input_date = final_df["TGL INPUT"].max()
+        
+        if pd.isna(latest_input_date):
+            add_log("⚠ Tidak ada tanggal valid di TGL INPUT untuk file gabungan", is_error=True)
+            continue
         
         # Tambahkan catatan update dengan tanggal dari TGL INPUT
         note_col = f"Update data input realisasi terakhir {latest_input_date.strftime('%d-%m-%Y %H:%M')}"
@@ -217,11 +287,13 @@ def main():
 
         if existing:
             drive.files().update(fileId=existing[0]["id"], media_body=media).execute()
+            add_log(f"  - File {filename} diperbarui")
         else:
             drive.files().create(
                 body={"name": filename, "parents": [FOLDER_ID]},
                 media_body=media
             ).execute()
+            add_log(f"  - File {filename} dibuat baru")
 
         # 3️⃣ ARSIPKAN SEMUA FILE SUMBER
         for src in monthly_sources[bulan_tebus]:
@@ -233,8 +305,15 @@ def main():
                 "bulan_input": src["bulan_input"]
             })
 
-        add_log(f"✔ {filename} selesai (berdasarkan TGL TEBUS) & sumber diarsipkan")
-        add_log(f"  - Tanggal update terakhir: {latest_input_date.strftime('%d-%m-%Y %H:%M')} (dari TGL INPUT)")
+        add_log(f"✔ {filename} selesai & {len(monthly_sources[bulan_tebus])} file sumber diarsipkan")
+        add_log(f"  - Tanggal update terakhir: {latest_input_date.strftime('%d-%m-%Y %H:%M')}")
+
+    # Ringkasan
+    add_log(f"\n📋 RINGKASAN:")
+    add_log(f"  - Total file diproses: {len(files)}")
+    add_log(f"  - File berhasil digabung: {len(monthly_data)} bulan")
+    for bulan in monthly_data:
+        add_log(f"    • {bulan}: {len(monthly_data[bulan])} file")
 
 # ----------------------------------------------------
 
