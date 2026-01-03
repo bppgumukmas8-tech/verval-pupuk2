@@ -9,7 +9,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
-from collections import defaultdict   # ✅ BARU
+from collections import defaultdict
 
 # ----------------------------------------------------
 # KONFIGURASI (TETAP)
@@ -106,22 +106,43 @@ def process_excel(file_id, file_name):
     df.columns = df.iloc[0]
     df = df[1:].reset_index(drop=True)
 
-    found_col = None
+    # Cari kolom TGL INPUT untuk tanggal update
+    tgl_input_col = None
+    # Cari kolom TGL TEBUS untuk nama file
+    tgl_tebus_col = None
+    
     for col in df.columns:
-        if str(col).replace(" ", "").upper() == "TGLINPUT":
-            found_col = col
-            break
+        col_clean = str(col).replace(" ", "").upper()
+        if col_clean == "TGLINPUT":
+            tgl_input_col = col
+        elif col_clean == "TGLTEBUS":
+            tgl_tebus_col = col
 
-    if not found_col:
+    if not tgl_input_col:
         add_log("⚠ Kolom TGL INPUT tidak ditemukan", is_error=True)
         return None
+    
+    if not tgl_tebus_col:
+        add_log("⚠ Kolom TGL TEBUS tidak ditemukan", is_error=True)
+        return None
 
-    df.rename(columns={found_col: "TGL INPUT"}, inplace=True)
+    # Rename kolom untuk konsistensi
+    df.rename(columns={tgl_input_col: "TGL INPUT", tgl_tebus_col: "TGL TEBUS"}, inplace=True)
+    
+    # Konversi ke datetime
     df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
+    df["TGL TEBUS"] = pd.to_datetime(df["TGL TEBUS"], errors="coerce")
 
-    latest = df["TGL INPUT"].max()
-    if pd.isna(latest):
+    # Cari tanggal terbaru untuk masing-masing kolom
+    latest_input = df["TGL INPUT"].max()
+    latest_tebus = df["TGL TEBUS"].max()
+    
+    if pd.isna(latest_input):
         add_log("⚠ TGL INPUT kosong", is_error=True)
+        return None
+    
+    if pd.isna(latest_tebus):
+        add_log("⚠ TGL TEBUS kosong", is_error=True)
         return None
 
     bulan_map = {
@@ -133,7 +154,9 @@ def process_excel(file_id, file_name):
     }
 
     return {
-        "bulan": bulan_map[latest.strftime("%B")],
+        "bulan_input": bulan_map[latest_input.strftime("%B")],  # Untuk catatan update
+        "bulan_tebus": bulan_map[latest_tebus.strftime("%B")],  # Untuk nama file
+        "latest_input": latest_input,  # Tanggal update terakhir
         "df": df,
         "source_file_id": file_id,
         "source_name": file_name
@@ -149,24 +172,29 @@ def main():
         add_log("Tidak ada file Excel.")
         return
 
-    monthly_data = defaultdict(list)
+    monthly_data = defaultdict(list)  # Group berdasarkan bulan TGL TEBUS
     monthly_sources = defaultdict(list)
 
     # 1️⃣ BACA SEMUA FILE
     for f in files:
         result = process_excel(f["id"], f["name"])
         if result:
-            monthly_data[result["bulan"]].append(result["df"])
-            monthly_sources[result["bulan"]].append(result)
+            # Group berdasarkan bulan TGL TEBUS
+            monthly_data[result["bulan_tebus"]].append(result["df"])
+            monthly_sources[result["bulan_tebus"]].append(result)
 
-    # 2️⃣ GABUNG PER BULAN
-    for bulan, df_list in monthly_data.items():
-        add_log(f"📊 Menggabungkan {len(df_list)} file bulan {bulan}")
+    # 2️⃣ GABUNG PER BULAN (berdasarkan TGL TEBUS)
+    for bulan_tebus, df_list in monthly_data.items():
+        add_log(f"📊 Menggabungkan {len(df_list)} file untuk bulan {bulan_tebus} (berdasarkan TGL TEBUS)")
 
+        # Gabungkan semua dataframe untuk bulan ini
         final_df = pd.concat(df_list, ignore_index=True)
-
-        latest = final_df["TGL INPUT"].max()
-        note_col = f"Update data input realisasi terakhir {latest.strftime('%d-%m-%Y %H:%M')}"
+        
+        # Cari tanggal update terbaru dari TGL INPUT
+        latest_input_date = final_df["TGL INPUT"].max()
+        
+        # Tambahkan catatan update dengan tanggal dari TGL INPUT
+        note_col = f"Update data input realisasi terakhir {latest_input_date.strftime('%d-%m-%Y %H:%M')}"
         final_df[note_col] = ""
 
         output = io.BytesIO()
@@ -174,7 +202,8 @@ def main():
             final_df.to_excel(writer, index=False, sheet_name="Worksheet")
         output.seek(0)
 
-        filename = f"{bulan}.xlsx"
+        # Nama file berdasarkan bulan TGL TEBUS
+        filename = f"{bulan_tebus}.xlsx"
 
         existing = drive.files().list(
             q=f"'{FOLDER_ID}' in parents and name='{filename}'",
@@ -195,14 +224,17 @@ def main():
             ).execute()
 
         # 3️⃣ ARSIPKAN SEMUA FILE SUMBER
-        for src in monthly_sources[bulan]:
+        for src in monthly_sources[bulan_tebus]:
             move_file_to_folder(src["source_file_id"], ARCHIVE_FOLDER_ID)
             processed_files.append({
                 "original_name": src["source_name"],
-                "new_name": filename
+                "new_name": filename,
+                "bulan_tebus": bulan_tebus,
+                "bulan_input": src["bulan_input"]
             })
 
-        add_log(f"✔ {filename} selesai & sumber diarsipkan")
+        add_log(f"✔ {filename} selesai (berdasarkan TGL TEBUS) & sumber diarsipkan")
+        add_log(f"  - Tanggal update terakhir: {latest_input_date.strftime('%d-%m-%Y %H:%M')} (dari TGL INPUT)")
 
 # ----------------------------------------------------
 
