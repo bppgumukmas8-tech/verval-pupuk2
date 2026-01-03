@@ -294,22 +294,22 @@ def format_date_indonesian(date_obj):
     if not date_obj:
         return "Tidak tersedia"
     
+    if isinstance(date_obj, datetime):
+        date_to_format = date_obj.date()
+    elif isinstance(date_obj, date):
+        date_to_format = date_obj
+    else:
+        return "Format tidak valid"
+    
     bulan_singkat = {
         1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 
         5: "Mei", 6: "Jun", 7: "Jul", 8: "Agu",
         9: "Sep", 10: "Okt", 11: "Nov", 12: "Des"
     }
     
-    if isinstance(date_obj, datetime):
-        day = date_obj.day
-        month = bulan_singkat[date_obj.month]
-        year = date_obj.year
-    elif isinstance(date_obj, date):
-        day = date_obj.day
-        month = bulan_singkat[date_obj.month]
-        year = date_obj.year
-    else:
-        return "Format tidak valid"
+    day = date_to_format.day
+    month = bulan_singkat[date_to_format.month]
+    year = date_to_format.year
     
     return f"{day:02d} {month} {year}"
 
@@ -323,12 +323,17 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
         spreadsheet = safe_google_api_operation(gc.open_by_url, spreadsheet_url)
         
         try:
-            worksheet = spreadsheet.worksheet("kecamatan_all")
-            print(f"   ✅ Menggunakan sheet 'kecamatan_all'")
+            worksheet = spreadsheet.worksheet("Sheet1")
+            print(f"   ✅ Menggunakan sheet 'Sheet1'")
         except gspread.exceptions.WorksheetNotFound:
             try:
-                worksheet = spreadsheet.worksheet("Sheet1")
-                print(f"   ✅ Menggunakan sheet 'Sheet1'")
+                # Coba sheet pertama
+                worksheet = spreadsheet.get_worksheet(0)
+                if worksheet:
+                    print(f"   ✅ Menggunakan sheet pertama sebagai Sheet1")
+                else:
+                    print(f"   ⚠️  Membuat sheet baru 'Sheet1'")
+                    worksheet = spreadsheet.add_worksheet(title="Sheet1", rows="100", cols="20")
             except:
                 print(f"   ⚠️  Membuat sheet baru 'Sheet1'")
                 worksheet = spreadsheet.add_worksheet(title="Sheet1", rows="100", cols="20")
@@ -353,27 +358,25 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
         worksheet.update('E3', [[time_formatted]])
         time.sleep(WRITE_DELAY)
         
-        # Format kolom E
-        date_info_format = {
-            "backgroundColor": {
-                "red": 0.95,
-                "green": 0.95,
-                "blue": 0.85
-            },
-            "textFormat": {
-                "bold": True,
-                "fontSize": 10
-            },
-            "horizontalAlignment": "LEFT",
-            "verticalAlignment": "MIDDLE"
-        }
-        
+        # Format kolom E dengan warna kuning muda
         try:
-            worksheet.format('E1:E3', date_info_format)
+            worksheet.format('E1:E3', {
+                "backgroundColor": {
+                    "red": 1.0,
+                    "green": 1.0,
+                    "blue": 0.9
+                },
+                "textFormat": {
+                    "bold": True,
+                    "fontSize": 10
+                },
+                "horizontalAlignment": "LEFT",
+                "verticalAlignment": "MIDDLE"
+            })
         except:
             pass
         
-        print(f"   ✅ Tanggal update ditulis:")
+        print(f"   ✅ Tanggal update ditulis ke Sheet1:")
         print(f"      E1: 'Update per tanggal input'")
         print(f"      E2: {date_formatted}")
         print(f"      E3: {time_formatted}")
@@ -381,7 +384,8 @@ def write_update_date_to_sheet(gc, spreadsheet_url, latest_datetime):
         return True
         
     except Exception as e:
-        print(f"   ❌ Gagal menulis tanggal: {str(e)}")
+        print(f"   ❌ Gagal menulis tanggal ke Sheet1: {str(e)}")
+        traceback.print_exc()
         return False
 
 # ============================
@@ -1759,7 +1763,7 @@ def create_comparison_kios(erdkk_kios_df, realisasi_kios_df_all, realisasi_kios_
     return comparison_all, comparison_acc
 
 # ============================
-# FUNGSI UPDATE GOOGLE SHEETS DENGAN TANGGAL
+# FUNGSI UPDATE GOOGLE SHEETS
 # ============================
 def format_worksheet_with_date(worksheet, df, latest_tanggal_input=None):
     """Format worksheet dengan warna header, border, dan informasi tanggal"""
@@ -1813,39 +1817,8 @@ def format_worksheet_with_date(worksheet, df, latest_tanggal_input=None):
             }
         }
         
-        # Format untuk informasi tanggal (baris 1-3, kolom E)
-        date_info_format = {
-            "backgroundColor": {
-                "red": 0.95,
-                "green": 0.95,
-                "blue": 0.85
-            },
-            "textFormat": {
-                "bold": True,
-                "fontSize": 10
-            },
-            "horizontalAlignment": "LEFT",
-            "verticalAlignment": "MIDDLE"
-        }
-        
         # Format header
         worksheet.format("1:1", header_format)
-        
-        # Tambahkan informasi tanggal input di kolom E (kolom 5) hanya untuk kecamatan_all
-        if latest_tanggal_input and worksheet.title == "kecamatan_all":
-            try:
-                # E1: Label
-                worksheet.update('E1', 'Update per tanggal input')
-                # E2: Tanggal
-                worksheet.update('E2', latest_tanggal_input.strftime('%d %b %Y'))
-                # E3: Jam
-                worksheet.update('E3', latest_tanggal_input.strftime('%H:%M:%S'))
-                
-                # Format kolom E
-                worksheet.format('E1:E3', date_info_format)
-                print(f"      ✅ Informasi tanggal ditambahkan di sheet kecamatan_all")
-            except Exception as e:
-                print(f"      ⚠️  Gagal menambahkan informasi tanggal: {e}")
         
         # Format baris TOTAL (jika ada)
         total_row = len(df) + 1  # +1 karena header di baris 1
@@ -1873,13 +1846,13 @@ def format_worksheet_with_date(worksheet, df, latest_tanggal_input=None):
         except:
             pass
         
-        print(f"      ✅ Formatting diterapkan")
+        print(f"      ✅ Formatting diterapkan untuk sheet {worksheet.title}")
         
     except Exception as e:
         print(f"      ⚠️  Gagal formatting: {e}")
 
-def batch_update_worksheets_with_date(spreadsheet, updates, latest_tanggal_input=None):
-    """Batch update untuk multiple worksheets dengan formatting dan tanggal"""
+def batch_update_worksheets(spreadsheet, updates):
+    """Batch update untuk multiple worksheets dengan formatting"""
     print(f"🔄 Memproses batch update untuk {len(updates)} worksheet...")
     
     success_count = 0
@@ -1914,11 +1887,8 @@ def batch_update_worksheets_with_date(spreadsheet, updates, latest_tanggal_input
                 value_input_option='USER_ENTERED'
             )
             
-            # Format worksheet dengan tanggal (hanya untuk sheet kecamatan_all)
-            if sheet_name == "kecamatan_all":
-                format_worksheet_with_date(worksheet, data, latest_tanggal_input)
-            else:
-                format_worksheet_with_date(worksheet, data, None)
+            # Format worksheet
+            format_worksheet_with_date(worksheet, data, None)
             
             print(f"      ✅ Berhasil update data ({len(data)} baris, {len(data.columns)} kolom)")
             success_count += 1
@@ -2050,6 +2020,21 @@ def process_erdkk_vs_realisasi_with_date():
             print("\n📅 Mengekstrak tanggal input dari file realisasi...")
             latest_tanggal_input, found_in_files = extract_latest_input_date_from_files(realisasi_files)
             
+            # Tulis tanggal ke Sheet1 - TAMBAHKAN DI SINI
+            if latest_tanggal_input:
+                print(f"\n📝 Menulis informasi tanggal ke Sheet1...")
+                success_write_date = write_update_date_to_sheet(gc, OUTPUT_SHEET_URL, latest_tanggal_input)
+                
+                if success_write_date:
+                    print(f"✅ Berhasil menulis tanggal ke Sheet1")
+                    print(f"   • Kolom E1: 'Update per tanggal input'")
+                    print(f"   • Kolom E2: {format_date_indonesian(latest_tanggal_input)}")
+                    print(f"   • Kolom E3: {latest_tanggal_input.strftime('%H:%M:%S')}")
+                else:
+                    print(f"⚠️ Gagal menulis tanggal ke Sheet1")
+            else:
+                print(f"⚠️ Tidak ada tanggal input yang valid ditemukan")
+            
             # Process setiap file Realisasi
             print("\n🔄 Memproses data Realisasi...")
             all_realisasi_rows = []
@@ -2127,26 +2112,22 @@ def process_erdkk_vs_realisasi_with_date():
             )
             
             # ============================================
-            # BAGIAN 4: EXPORT KE GOOGLE SHEETS DENGAN TANGGAL INPUT
+            # BAGIAN 4: EXPORT KE GOOGLE SHEETS
             # ============================================
             print("\n" + "=" * 80)
-            print("📋 BAGIAN 4: EXPORT KE GOOGLE SHEETS DENGAN TANGGAL INPUT")
+            print("📋 BAGIAN 4: EXPORT KE GOOGLE SHEETS")
             print("=" * 80)
             
             print(f"\n📤 Target spreadsheet: {OUTPUT_SHEET_URL}")
             
+            # Informasi tanggal sudah ditulis di bagian sebelumnya
             if latest_tanggal_input:
-                print(f"📅 Informasi tanggal yang akan ditambahkan di sheet kecamatan_all:")
-                print(f"   • Kolom E1: 'Update per tanggal input'")
-                print(f"   • Kolom E2: {latest_tanggal_input.strftime('%d %b %Y')}")
-                print(f"   • Kolom E3: {latest_tanggal_input.strftime('%H:%M:%S')}")
-            else:
-                print(f"⚠️  Tidak ada tanggal input yang valid ditemukan")
+                print(f"📅 Informasi tanggal sudah ditulis di Sheet1 kolom E1-E3")
             
             # Update 4 sheet yang berbeda
             updates = []
             
-            # Sheet 1: kecamatan_all (dengan tanggal)
+            # Sheet 1: kecamatan_all
             if not kecamatan_all.empty:
                 updates.append(("kecamatan_all", kecamatan_all))
                 print(f"   ✅ kecamatan_all: {len(kecamatan_all)} baris")
@@ -2234,7 +2215,7 @@ def process_erdkk_vs_realisasi_with_date():
                     print(f"   ⚠️  kios_acc_pusat: Sheet kosong dibuat")
             
             if updates:
-                success_count = batch_update_worksheets_with_date(spreadsheet, updates, latest_tanggal_input)
+                success_count = batch_update_worksheets(spreadsheet, updates)
             else:
                 print("⚠️  Tidak ada data untuk di-export")
                 success_count = 0
@@ -2295,10 +2276,10 @@ def process_erdkk_vs_realisasi_with_date():
         if latest_tanggal_input:
             tanggal_info = f"""
 📅 INFORMASI TANGGAL INPUT REALISASI:
-- Tanggal terbaru: {latest_tanggal_input.strftime('%d %b %Y')}
+- Tanggal terbaru: {format_date_indonesian(latest_tanggal_input)}
 - Jam terbaru: {latest_tanggal_input.strftime('%H:%M:%S')}
 - File dengan kolom tanggal: {found_in_files}/{len(realisasi_files) if 'realisasi_files' in locals() else 0}
-- Informasi ditampilkan di sheet kecamatan_all kolom E1-E3
+- Informasi ditampilkan di Sheet1 kolom E1-E3
 """
         else:
             tanggal_info = "📅 INFORMASI TANGGAL INPUT: Tidak dapat menentukan tanggal input dari data realisasi"
@@ -2327,30 +2308,33 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 6 (DENGAN TANGGAL INPUT)
 - Persentase Realisasi/ERDKK: {percentage_urea:.2f}%
 
 📋 SHEET YANG DIBUAT:
-1. kecamatan_all: Perbandingan ERDKK vs Realisasi (semua status)
+1. Sheet1: Informasi tanggal input
+   • ✅ DIBUAT di kolom E1-E3
+   • 📅 Dengan informasi tanggal input
+
+2. kecamatan_all: Perbandingan ERDKK vs Realisasi (semua status)
    • {('✅ DIBUAT' if 'kecamatan_all' in locals() and not kecamatan_all.empty else '⚠️ KOSONG')}
-   • {('📅 Dengan informasi tanggal input' if latest_tanggal_input else '⚠️ Tanpa informasi tanggal')}
    
-2. kecamatan_acc_pusat: Perbandingan ERDKK vs Realisasi ACC PUSAT saja
+3. kecamatan_acc_pusat: Perbandingan ERDKK vs Realisasi ACC PUSAT saja
    • {('✅ DIBUAT' if 'kecamatan_acc' in locals() and not kecamatan_acc.empty else '✅ DIBUAT (KOSONG)' + ' - Tidak ada data ACC PUSAT')}
    • Kriteria ACC PUSAT: mengandung 'disetujui' dan 'pusat', TIDAK mengandung 'menunggu' atau 'ditolak'
 
-3. kios_all: Perbandingan per Kios (semua status)
+4. kios_all: Perbandingan per Kios (semua status)
    • {('✅ DIBUAT' if 'kios_all' in locals() and not kios_all.empty else '⚠️ KOSONG')}
 
-4. kios_acc_pusat: Perbandingan per Kios (ACC PUSAT saja)
+5. kios_acc_pusat: Perbandingan per Kios (ACC PUSAT saja)
    • {('✅ DIBUAT' if 'kios_acc' in locals() and not kios_acc.empty else '✅ DIBUAT (KOSONG)' + ' - Tidak ada data ACC PUSAT')}
 
 🎯 FITUR BARU:
 1. Ekstraksi tanggal input terbaru dari data realisasi (mirip pivot_klaster_status.py)
 2. Mencari kolom 'TGL INPUT' atau 'TANGGAL INPUT'
-3. Menampilkan informasi tanggal di sheet kecamatan_all kolom E1-E3
+3. Menampilkan informasi tanggal di Sheet1 kolom E1-E3
 4. Format: E1="Update per tanggal input", E2=Tanggal (02 Jan 2026), E3=Jam (21:40:24)
 
 📤 OUTPUT:
 Spreadsheet: {OUTPUT_SHEET_URL}
 
-✅ PROSES SELESAI: {success_count}/4 sheet berhasil diupdate
+✅ PROSES SELESAI: {success_count}/4 sheet berhasil diupdate (ditambah Sheet1 untuk tanggal)
 """
         
         subject = "ANALISIS ERDKK vs REALISASI V6 " + ("BERHASIL" if success_count > 0 else "DENGAN KENDALA")
@@ -2358,6 +2342,7 @@ Spreadsheet: {OUTPUT_SHEET_URL}
         
         print(f"\n{'✅ ANALISIS SELESAI! 🎉' if success_count > 0 else '⚠️ ANALISIS SELESAI DENGAN KENDALA'}")
         print(f"📋 Silakan cek file: {OUTPUT_SHEET_URL}")
+        print(f"   • Informasi tanggal: Sheet1 kolom E1-E3")
         print(f"   • {success_count}/4 sheet berhasil diupdate")
         print(f"   ⏰ Waktu total: {duration.seconds // 60}m {duration.seconds % 60}s")
         
@@ -2371,8 +2356,8 @@ Spreadsheet: {OUTPUT_SHEET_URL}
         
         if latest_tanggal_input:
             print(f"\n📅 INFORMASI TANGGAL INPUT:")
-            print(f"   • Ditampilkan di sheet kecamatan_all kolom E1-E3")
-            print(f"   • Tanggal: {latest_tanggal_input.strftime('%d %b %Y')}")
+            print(f"   • Ditampilkan di Sheet1 kolom E1-E3")
+            print(f"   • Tanggal: {format_date_indonesian(latest_tanggal_input)}")
             print(f"   • Jam: {latest_tanggal_input.strftime('%H:%M:%S')}")
         
         return success_count > 0
