@@ -433,73 +433,12 @@ def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
     return paths
 
 # ============================
-# FUNGSI UNTUK MENULIS DATA KE GOOGLE SHEETS (DENGAN AUTO EXPAND)
+# FUNGSI UNTUK MENULIS DATA KE GOOGLE SHEETS (TANPA LIMIT 200K BARIS)
 # ============================
-def clear_all_sheets_except_first(sh):
-    """
-    Membersihkan semua worksheet kecuali worksheet pertama
-    """
-    try:
-        worksheets = sh.worksheets()
-        if len(worksheets) > 1:
-            print(f"🗑️  Membersihkan {len(worksheets)-1} worksheet tambahan...")
-            for i in range(1, len(worksheets)):
-                try:
-                    sh.del_worksheet(worksheets[i])
-                except:
-                    pass
-        print("✅ Semua worksheet tambahan telah dibersihkan")
-    except Exception as e:
-        print(f"⚠️  Gagal membersihkan worksheet: {str(e)}")
-
-def optimize_worksheet_size(ws, required_rows, required_cols):
-    """
-    Optimalkan ukuran worksheet untuk menghemat cells
-    """
-    try:
-        current_rows = ws.row_count
-        current_cols = ws.col_count
-        
-        # Hitung cells yang digunakan
-        current_cells = current_rows * current_cols
-        required_cells = required_rows * required_cols
-        
-        print(f"📊 Cells saat ini: {current_cells:,}")
-        print(f"📊 Cells diperlukan: {required_cells:,}")
-        
-        # Jika cells saat ini > 2x required, shrink worksheet
-        if current_cells > (required_cells * 2):
-            print(f"🔄 Shrinking worksheet: {current_rows}x{current_cols} → {required_rows}x{required_cols}")
-            
-            # Resize ke ukuran yang diperlukan + buffer kecil
-            new_rows = required_rows + 100
-            new_cols = required_cols + 5
-            
-            ws.resize(rows=new_rows, cols=new_cols)
-            print(f"✅ Worksheet di-shrink menjadi {new_rows} baris x {new_cols} kolom")
-            return True
-        
-        # Jika cells tidak cukup, expand
-        elif required_rows > current_rows or required_cols > current_cols:
-            print(f"🔄 Expanding worksheet: {current_rows}x{current_cols} → {required_rows}x{required_cols}")
-            
-            # Resize ke ukuran yang diperlukan + buffer
-            new_rows = max(required_rows + 100, int(required_rows * 1.1))
-            new_cols = max(required_cols + 5, int(required_cols * 1.1))
-            
-            ws.resize(rows=new_rows, cols=new_cols)
-            print(f"✅ Worksheet di-expand menjadi {new_rows} baris x {new_cols} kolom")
-            return True
-        
-        return False
-        
-    except Exception as e:
-        print(f"⚠️  Gagal optimize worksheet size: {str(e)}")
-        return False
-
 def write_to_google_sheet(worksheet, data_rows):
     """
-    Menulis data ke Google Sheets dengan metode chunking dan auto-expand
+    Menulis data ke Google Sheets TANPA limit 200,000 baris
+    Hanya batasan 10 juta cells total per spreadsheet
     """
     try:
         print(f"📤 Menulis {len(data_rows)} baris data ke Google Sheets...")
@@ -508,26 +447,69 @@ def write_to_google_sheet(worksheet, data_rows):
         total_columns = len(data_rows[0]) if data_rows else 0
         
         print(f"📊 Ukuran data: {total_rows_to_write} baris x {total_columns} kolom")
+        print(f"💾 Total cells: {total_rows_to_write * total_columns:,}")
         
-        # 1. Optimalkan ukuran worksheet
-        optimize_worksheet_size(worksheet, total_rows_to_write, total_columns)
-        
-        # 2. Clear semua data di worksheet (hanya data, bukan sheetnya)
-        print("🧹 Membersihkan semua data di worksheet...")
+        # 1. CLEAR SEMUA DATA DI WORKSHEET TERLEBIH DAHULU
+        print("🧹 Membersihkan SEMUA data lama di worksheet...")
         try:
-            # Clear seluruh worksheet
+            # Clear seluruh worksheet untuk mengosongkan cells
             worksheet.clear()
             print("✅ Worksheet berhasil dibersihkan")
         except Exception as clear_error:
             print(f"⚠️  Gagal clear worksheet: {str(clear_error)}")
+            # Tetap lanjut, mungkin sudah kosong
         
-        # 3. Tentukan ukuran chunk yang aman untuk Google Sheets
-        CHUNK_SIZE = 10000
+        # 2. RESIZE WORKSHEET JIKA PERLU UNTUK DATA YANG BESAR
+        current_rows = worksheet.row_count
+        current_cols = worksheet.col_count
+        
+        # Hitung cells saat ini
+        current_cells = current_rows * current_cols
+        required_cells = total_rows_to_write * total_columns
+        
+        print(f"📊 Cells saat ini: {current_cells:,}")
+        print(f"📊 Cells diperlukan: {required_cells:,}")
+        
+        # Resize jika cells tidak cukup (tidak ada limit 200k baris)
+        if required_cells > current_cells:
+            print(f"🔄 Resize worksheet untuk menampung data besar...")
+            
+            # Hitung ukuran baru (beri buffer 20%)
+            new_rows = max(total_rows_to_write + 1000, int(total_rows_to_write * 1.2))
+            new_cols = max(total_columns + 10, int(total_columns * 1.2))
+            
+            # Hitung cells baru
+            new_cells = new_rows * new_cols
+            print(f"📏 Ukuran baru: {new_rows} baris x {new_cols} kolom = {new_cells:,} cells")
+            
+            # Cek apakah masih dalam batas 10 juta cells
+            if new_cells > 10000000:
+                print("⚠️  PERINGATAN: Ukuran worksheet mendekati limit 10 juta cells")
+                # Tetap resize, biarkan Google Sheets yang menolak jika benar-benar melebihi
+                
+            try:
+                worksheet.resize(rows=new_rows, cols=new_cols)
+                print(f"✅ Worksheet di-resize menjadi {new_rows} baris x {new_cols} kolom")
+            except Exception as resize_error:
+                error_msg = str(resize_error)
+                if "exceeds grid limits" in error_msg or "10000000" in error_msg:
+                    print("❌ Gagal resize: Mencapai limit 10 juta cells per spreadsheet")
+                    print("💡 Coba dengan ukuran yang lebih kecil...")
+                    # Coba resize dengan ukuran yang pas tanpa buffer
+                    try:
+                        worksheet.resize(rows=total_rows_to_write + 100, cols=total_columns + 5)
+                        print(f"✅ Worksheet di-resize menjadi {total_rows_to_write + 100} baris x {total_columns + 5} kolom")
+                    except:
+                        print("⚠️  Gagal resize ulang, melanjutkan dengan ukuran saat ini")
+                else:
+                    print(f"⚠️  Gagal resize worksheet: {str(resize_error)}")
+        
+        # 3. TULIS DATA DENGAN CHUNKING UNTUK DATA BESAR
+        CHUNK_SIZE = 10000  # 10,000 baris per chunk
         chunk_count = (total_rows_to_write + CHUNK_SIZE - 1) // CHUNK_SIZE
         
         print(f"🔀 Membagi data menjadi {chunk_count} chunk...")
         
-        # 4. Tulis data per chunk
         for chunk_index in range(chunk_count):
             start_row = chunk_index * CHUNK_SIZE
             end_row = min(start_row + CHUNK_SIZE, total_rows_to_write)
@@ -535,139 +517,59 @@ def write_to_google_sheet(worksheet, data_rows):
             current_chunk = data_rows[start_row:end_row]
             start_cell = f'A{start_row + 1}'
             
-            # Format end_cell untuk logging
-            end_column_letter = chr(64 + total_columns)
-            end_cell = f'{end_column_letter}{end_row}'
-            
-            print(f"   📄 Menulis chunk {chunk_index + 1}/{chunk_count}: {start_cell}:{end_cell}...")
+            print(f"   📄 Menulis chunk {chunk_index + 1}/{chunk_count}: baris {start_row + 1}-{end_row}...")
             
             try:
                 worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
                 
+                # Jeda antar chunk untuk menghindari rate limit
                 if chunk_index < chunk_count - 1:
-                    # Jeda progresif
-                    wait_time = 2 + (chunk_index * 0.1)
-                    time.sleep(wait_time)
+                    time.sleep(2)
                     
             except Exception as chunk_error:
                 error_msg = str(chunk_error)
                 print(f"❌ Error pada chunk {chunk_index + 1}: {error_msg}")
                 
-                # Coba handle error khusus
-                if "exceeds grid limits" in error_msg or "400" in error_msg or "200000" in error_msg:
-                    print("⚠️  Terdeteksi error grid limits...")
+                # Coba lagi dengan jeda lebih lama
+                print("🔄 Mencoba lagi dengan jeda 5 detik...")
+                time.sleep(5)
+                
+                try:
+                    worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
+                    print(f"✅ Chunk {chunk_index + 1} berhasil pada percobaan kedua")
+                except Exception as retry_error:
+                    print(f"❌ Gagal lagi: {str(retry_error)}")
                     
-                    # Coba shrink worksheet dulu
-                    print("🔄 Mencoba shrink worksheet...")
-                    time.sleep(3)
+                    # Coba dengan chunk yang lebih kecil
+                    print("🔄 Mencoba dengan chunk lebih kecil (5,000 baris)...")
+                    smaller_chunk_size = 5000
                     
-                    # Coba lagi dengan chunk yang lebih kecil
-                    try:
-                        worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
-                        print(f"✅ Chunk {chunk_index + 1} berhasil pada percobaan kedua")
-                    except Exception as retry_error:
-                        print(f"❌ Gagal lagi: {str(retry_error)}")
+                    # Bagi chunk saat ini menjadi sub-chunks
+                    sub_start_row = start_row
+                    sub_chunks = []
+                    while sub_start_row < end_row:
+                        sub_end_row = min(sub_start_row + smaller_chunk_size, end_row)
+                        sub_chunks.append((sub_start_row, sub_end_row))
+                        sub_start_row = sub_end_row
+                    
+                    for sub_idx, (sub_start, sub_end) in enumerate(sub_chunks):
+                        sub_chunk = data_rows[sub_start:sub_end]
+                        sub_cell = f'A{sub_start + 1}'
                         
-                        # Jika masih gagal, coba buat worksheet baru dengan nama berbeda
-                        if "10000000" in str(retry_error):
-                            print("💡 Spreadsheet penuh! Mencoba alternatif...")
-                            return create_alternative_sheet(data_rows)
-                        else:
-                            raise retry_error
-                else:
-                    print("🔄 Mencoba lagi dengan jeda yang lebih lama...")
-                    
-                    time.sleep(5)
-                    try:
-                        worksheet.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
-                        print(f"✅ Chunk {chunk_index + 1} berhasil pada percobaan kedua")
-                    except Exception as retry_error:
-                        print(f"❌ Gagal lagi pada chunk {chunk_index + 1}: {str(retry_error)}")
-                        raise retry_error
+                        print(f"     📝 Sub-chunk {sub_idx + 1}/{len(sub_chunks)}: baris {sub_start + 1}-{sub_end}...")
+                        
+                        try:
+                            worksheet.update(sub_cell, sub_chunk, value_input_option='USER_ENTERED')
+                            time.sleep(1)
+                        except Exception as sub_error:
+                            print(f"     ❌ Gagal sub-chunk: {str(sub_error)}")
+                            raise sub_error
         
         print(f"✅ Semua data berhasil ditulis! Total {total_rows_to_write} baris.")
         return True
         
     except Exception as e:
         print(f"❌ Gagal menulis data ke Google Sheets: {str(e)}")
-        
-        # Coba alternatif jika spreadsheet penuh
-        if "10000000" in str(e):
-            print("💡 Spreadsheet mencapai limit 10 juta cells!")
-            return create_alternative_sheet(data_rows)
-        
-        raise
-
-def create_alternative_sheet(data_rows):
-    """
-    Buat spreadsheet alternatif jika spreadsheet utama penuh
-    """
-    try:
-        total_rows = len(data_rows)
-        total_cols = len(data_rows[0]) if data_rows else 0
-        
-        print(f"🆕 Membuat spreadsheet alternatif untuk {total_rows} baris data...")
-        
-        # Buat spreadsheet baru
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_spreadsheet_name = f"ERDKK_Pivot_{timestamp}"
-        
-        print(f"📝 Membuat spreadsheet baru: '{new_spreadsheet_name}'")
-        
-        # Buat spreadsheet baru
-        new_sh = gc.create(new_spreadsheet_name)
-        
-        # Share dengan owner (optional)
-        try:
-            new_sh.share(SENDER_EMAIL, perm_type='user', role='writer')
-        except:
-            pass
-        
-        # Dapatkan worksheet pertama
-        new_ws = new_sh.get_worksheet(0)
-        
-        # Update title
-        new_ws.update_title(SHEET_NAME)
-        
-        # Resize worksheet
-        required_rows = total_rows + 100
-        required_cols = total_cols + 5
-        new_ws.resize(rows=required_rows, cols=required_cols)
-        
-        print(f"✅ Spreadsheet baru dibuat: {new_spreadsheet_name}")
-        print(f"🔗 Link: https://docs.google.com/spreadsheets/d/{new_sh.id}")
-        
-        # Tulis data dengan chunking
-        CHUNK_SIZE = 10000
-        chunk_count = (total_rows + CHUNK_SIZE - 1) // CHUNK_SIZE
-        
-        print(f"🔀 Menulis {chunk_count} chunk ke spreadsheet baru...")
-        
-        for chunk_index in range(chunk_count):
-            start_row = chunk_index * CHUNK_SIZE
-            end_row = min(start_row + CHUNK_SIZE, total_rows)
-            
-            current_chunk = data_rows[start_row:end_row]
-            start_cell = f'A{start_row + 1}'
-            
-            print(f"   📄 Chunk {chunk_index + 1}/{chunk_count}: baris {start_row + 1}-{end_row}...")
-            
-            new_ws.update(start_cell, current_chunk, value_input_option='USER_ENTERED')
-            
-            if chunk_index < chunk_count - 1:
-                time.sleep(2)
-        
-        print(f"✅ Semua data berhasil ditulis ke spreadsheet baru!")
-        
-        # Update global variables untuk email notification
-        global SPREADSHEET_ID, SHEET_NAME
-        SPREADSHEET_ID = new_sh.id
-        SHEET_NAME = SHEET_NAME
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Gagal membuat spreadsheet alternatif: {str(e)}")
         raise
 
 # ============================
@@ -825,8 +727,13 @@ def main():
         if len(hasil_pivot) < 2:  # Hanya header, tidak ada data
             raise ValueError("❌ Tidak ada data yang berhasil dipivot")
         
-        print(f"✅ Pivot data selesai: {len(hasil_pivot) - 1} baris hasil")
-        print(f"   📋 Kolom output: {len(hasil_pivot[0])} kolom")
+        total_pivot_rows = len(hasil_pivot) - 1  # Exclude header
+        total_columns = len(hasil_pivot[0])
+        total_cells = total_pivot_rows * total_columns
+        
+        print(f"✅ Pivot data selesai: {total_pivot_rows} baris hasil")
+        print(f"   📋 Kolom output: {total_columns} kolom")
+        print(f"   💾 Total cells: {total_cells:,}")
         print(f"   📊 Contoh header: {hasil_pivot[0]}")
 
         # 4. Tulis ke Google Sheet
@@ -839,10 +746,6 @@ def main():
         try:
             sh = gc.open_by_key(SPREADSHEET_ID)
             print(f"✅ Spreadsheet ditemukan: {SPREADSHEET_ID}")
-            
-            # Bersihkan semua worksheet tambahan
-            clear_all_sheets_except_first(sh)
-            
         except Exception as e:
             raise ValueError(f"❌ Gagal membuka spreadsheet: {str(e)}")
         
@@ -851,17 +754,12 @@ def main():
             ws = sh.worksheet(SHEET_NAME)
             print(f"✅ Sheet '{SHEET_NAME}' ditemukan")
             
-            # Cek ukuran data
-            total_rows = len(hasil_pivot)
-            total_cells_needed = total_rows * len(hasil_pivot[0])
-            print(f"📊 Cells diperlukan: {total_cells_needed:,}")
-            
         except gspread.exceptions.WorksheetNotFound:
             print(f"⚠️  Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
             
-            # Hitung ukuran yang dibutuhkan
-            required_rows = max(1000, len(hasil_pivot) + 100)
-            required_cols = max(26, len(hasil_pivot[0]) + 5)
+            # Hitung ukuran yang dibutuhkan untuk data besar
+            required_rows = max(1000, len(hasil_pivot) + 1000)  # Buffer lebih besar
+            required_cols = max(26, len(hasil_pivot[0]) + 10)   # Buffer lebih besar
             
             ws = sh.add_worksheet(
                 title=SHEET_NAME, 
@@ -885,6 +783,8 @@ def main():
         print("=" * 60)
         
         now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        spreadsheet_link = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}"
+        
         success_message = f"""
 REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 
@@ -892,8 +792,10 @@ REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 📁 Jumlah File: {file_count}
 📊 Total Data Awal: {total_rows_original} baris
 🧹 Data Setelah Cleaning: {total_rows_cleaned} baris
-📈 Hasil Pivot: {len(hasil_pivot) - 1} baris
-🏢 Unique KTP-Poktan: {len(hasil_pivot) - 1}
+📈 Hasil Pivot: {total_pivot_rows} baris
+🏢 Unique KTP-Poktan: {total_pivot_rows}
+📊 Kolom Output: {total_columns} kolom
+💾 Total Cells: {total_cells:,}
 
 📋 DETAIL FILE:
 {chr(10).join(log)}
@@ -901,6 +803,13 @@ REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 🔍 CONTOH NIK YANG DIBERSIHKAN ({min(5, len(nik_cleaning_log))} pertama):
 {chr(10).join(nik_cleaning_log[:5])}
 {"... (masih ada " + str(len(nik_cleaning_log) - 5) + " entri lainnya)" if len(nik_cleaning_log) > 5 else "Tidak ada NIK yang dibersihkan"}
+
+✅ DATA TELAH BERHASIL DIUPLOAD:
+📊 Spreadsheet: {spreadsheet_link}
+📄 Sheet: {SHEET_NAME}
+📈 Baris Data: {total_pivot_rows}
+📊 Kolom Data: {total_columns}
+💾 Cells Digunakan: {total_cells:,}
 
 📊 STRUKTUR OUTPUT:
 1. KTP
@@ -915,23 +824,11 @@ REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 14-18. Pupuk MT2 (Urea, NPK, NPK Formula, Organik, ZA)
 19-23. Pupuk MT3 (Urea, NPK, NPK Formula, Organik, ZA)
 
-✅ DATA TELAH BERHASIL DIUPLOAD:
-📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
-📄 Sheet: {SHEET_NAME}
-📈 Baris Data: {len(hasil_pivot) - 1}
-📊 Kolom Data: {len(hasil_pivot[0])}
-💾 Cells Digunakan: {(len(hasil_pivot) - 1) * len(hasil_pivot[0]):,}
-
-⚠️ CATATAN TEKNIS:
-- Google Sheets memiliki batas 10 juta cells per spreadsheet
-- Semua data lama telah dibersihkan sebelum menulis data baru
-- Worksheet di-optimize untuk ukuran yang tepat
-
 📍 REPOSITORY: {os.environ.get('GITHUB_REPOSITORY', 'verval-pupuk2')}
 🔄 WORKFLOW RUN: {os.environ.get('GITHUB_RUN_ID', 'N/A')}
 """
 
-        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {len(hasil_pivot) - 1} baris")
+        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {total_pivot_rows} baris")
 
         # 6. Kirim email notifikasi sukses
         print("📧 Mengirim notifikasi email...")
