@@ -1,9 +1,9 @@
 """
-erdkk_vs_realisasi_fixed_v4.py
+erdkk_vs_realisasi_fixed_v5.py
 Script untuk analisis perbandingan data ERDKK vs Realisasi Penebusan Pupuk.
-VERSI DIPERBAIKI - Handle kasus data kosong, kolom KECAMATAN dari GAPOKTAN, dan identifikasi kolom yang benar.
+VERSI DIPERBAIKI - Menambahkan informasi tanggal input terbaru dari data realisasi.
 
-Lokasi: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v4.py
+Lokasi: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v5.py
 """
 
 import os
@@ -15,7 +15,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 import json
 import time
@@ -24,6 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import io
 import tempfile
+from dateutil import parser
 
 # ============================
 # KONFIGURASI
@@ -96,7 +97,7 @@ def send_email_notification(subject, message, is_success=True):
                     <div style="background-color: #f0f8f0; padding: 15px; border-radius: 5px;">
                         {message.replace(chr(10), '<br>')}
                     </div>
-                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v4.py</small></p>
+                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v5.py</small></p>
                     <p><small>⏰ Dikirim secara otomatis pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</small></p>
                 </body>
             </html>
@@ -109,7 +110,7 @@ def send_email_notification(subject, message, is_success=True):
                     <div style="background-color: #ffe6e6; padding: 15px; border-radius: 5px;">
                         {message.replace(chr(10), '<br>')}
                     </div>
-                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v4.py</small></p>
+                    <p><small>📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v5.py</small></p>
                     <p><small>⏰ Dikirim secara otomatis pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</small></p>
                 </body>
             </html>
@@ -195,6 +196,182 @@ def print_status_analysis(df, status_column='STATUS'):
         note_str = f" ({', '.join(notes)})" if notes else ""
         
         print(f"      {marker} {status}: {count} data ({percentage:.1f}%){note_str}")
+
+# ============================
+# FUNGSI BANTU UNTUK PARSING TANGGAL
+# ============================
+def parse_tanggal_input(tanggal_value):
+    """Parse tanggal input dari berbagai format"""
+    if pd.isna(tanggal_value) or tanggal_value is None:
+        return None
+    
+    # Jika sudah datetime, langsung return
+    if isinstance(tanggal_value, datetime):
+        return tanggal_value
+    
+    try:
+        # Coba parse dengan dateutil
+        return parser.parse(str(tanggal_value), dayfirst=True)
+    except:
+        try:
+            # Coba format umum
+            formats = [
+                '%d-%m-%Y %H:%M:%S',
+                '%d/%m/%Y %H:%M:%S',
+                '%Y-%m-%d %H:%M:%S',
+                '%Y/%m/%d %H:%M:%S',
+                '%d-%m-%Y %H:%M',
+                '%d/%m/%Y %H:%M',
+                '%Y-%m-%d',
+                '%d-%m-%Y',
+                '%d/%m/%Y'
+            ]
+            
+            for fmt in formats:
+                try:
+                    return datetime.strptime(str(tanggal_value).strip(), fmt)
+                except:
+                    continue
+            
+            # Coba extract tanggal dari string
+            tanggal_str = str(tanggal_value)
+            # Cari pola tanggal
+            date_patterns = [
+                r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})',
+                r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})'
+            ]
+            
+            for pattern in date_patterns:
+                match = re.search(pattern, tanggal_str)
+                if match:
+                    groups = match.groups()
+                    if len(groups) == 3:
+                        try:
+                            if len(groups[2]) == 4:  # Format YYYY
+                                if len(groups[0]) == 4:  # YYYY-MM-DD
+                                    return datetime(int(groups[0]), int(groups[1]), int(groups[2]))
+                                else:  # DD-MM-YYYY
+                                    return datetime(int(groups[2]), int(groups[1]), int(groups[0]))
+                            else:  # Format YY
+                                if len(groups[0]) == 2:  # DD-MM-YY
+                                    year = int(groups[2])
+                                    if year < 100:
+                                        year += 2000 if year < 50 else 1900
+                                    return datetime(year, int(groups[1]), int(groups[0]))
+                        except:
+                            continue
+            
+            return None
+        except:
+            return None
+
+def extract_latest_tanggal_input_from_file(file_path):
+    """Ekstrak tanggal input terbaru dari file realisasi"""
+    try:
+        print(f"   🔍 Mengekstrak tanggal input dari file...")
+        
+        # Baca file dengan engine openpyxl untuk handle berbagai format
+        df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
+        
+        # Clean column names
+        df.columns = [clean_column_name(col) for col in df.columns]
+        
+        # Cari kolom yang mungkin berisi tanggal input
+        tanggal_cols = []
+        for col in df.columns:
+            col_upper = col.upper()
+            # Pattern untuk kolom tanggal
+            if any(pattern in col_upper for pattern in ['TANGGAL', 'DATE', 'WAKTU', 'TIME', 'INPUT', 'DIBUAT', 'CREATED']):
+                tanggal_cols.append(col)
+        
+        # Jika tidak ditemukan, coba semua kolom
+        if not tanggal_cols:
+            tanggal_cols = df.columns.tolist()
+        
+        latest_date = None
+        
+        for col in tanggal_cols:
+            try:
+                # Ambil sample untuk analisis
+                sample_data = df[col].dropna().head(10).tolist()
+                if not sample_data:
+                    continue
+                
+                print(f"   🔍 Cek kolom '{col}': sample = {sample_data[:3]}")
+                
+                # Coba parse setiap nilai
+                for value in df[col].dropna().head(100):  # Cek 100 baris pertama
+                    try:
+                        parsed_date = parse_tanggal_input(value)
+                        if parsed_date:
+                            if latest_date is None or parsed_date > latest_date:
+                                latest_date = parsed_date
+                    except:
+                        continue
+                        
+                if latest_date:
+                    print(f"   ✅ Tanggal terbaru dari kolom '{col}': {latest_date}")
+                    return latest_date
+                    
+            except Exception as e:
+                print(f"   ⚠️  Error processing column {col}: {e}")
+                continue
+        
+        # Coba cari tanggal dari nama file
+        try:
+            # Pattern: mencari tanggal dalam format YYYY-MM-DD atau DD-MM-YYYY dalam nama file
+            filename = os.path.basename(file_path)
+            date_patterns = [
+                r'(\d{4})[-_](\d{1,2})[-_](\d{1,2})',  # YYYY-MM-DD
+                r'(\d{1,2})[-_](\d{1,2})[-_](\d{4})',  # DD-MM-YYYY
+                r'(\d{1,2})[-_](\d{1,2})[-_](\d{2})'   # DD-MM-YY
+            ]
+            
+            for pattern in date_patterns:
+                match = re.search(pattern, filename)
+                if match:
+                    groups = match.groups()
+                    if len(groups) == 3:
+                        if len(groups[0]) == 4:  # YYYY-MM-DD
+                            year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                        elif len(groups[2]) == 4:  # DD-MM-YYYY
+                            day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
+                        else:  # DD-MM-YY
+                            day, month, year_str = int(groups[0]), int(groups[1]), groups[2]
+                            year = int(year_str)
+                            if year < 100:
+                                year += 2000 if year < 50 else 1900
+                        
+                        file_date = datetime(year, month, day)
+                        print(f"   📅 Tanggal dari nama file: {file_date}")
+                        
+                        # Coba cari waktu dari data
+                        latest_time = None
+                        for col in df.columns:
+                            for value in df[col].dropna().head(20):
+                                if isinstance(value, str) and ':' in value:
+                                    time_match = re.search(r'(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?', value)
+                                    if time_match:
+                                        hour = int(time_match.group(1))
+                                        minute = int(time_match.group(2))
+                                        second = int(time_match.group(3)) if time_match.group(3) else 0
+                                        latest_time = timedelta(hours=hour, minutes=minute, seconds=second)
+                                        break
+                            if latest_time:
+                                break
+                        
+                        if latest_time:
+                            file_date = datetime.combine(file_date.date(), (datetime.min + latest_time).time())
+                        
+                        return file_date
+        except Exception as e:
+            print(f"   ⚠️  Error extracting date from filename: {e}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"   ❌ Error extracting tanggal input: {e}")
+        return None
 
 # ============================
 # FUNGSI BANTU UNTUK GOOGLE API
@@ -287,7 +464,7 @@ def download_excel_files_from_drive(credentials, folder_id, folder_name):
         query = f"'{folder_id}' in parents and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or mimeType='application/vnd.google-apps.spreadsheet')"
         print(f"   🔍 Query: {query}")
         
-        results = drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+        results = drive_service.files().list(q=query, fields="files(id, name, mimeType, modifiedTime)").execute()
         files = results.get("files", [])
 
         if not files:
@@ -297,6 +474,8 @@ def download_excel_files_from_drive(credentials, folder_id, folder_name):
         file_paths = []
         for file in files:
             print(f"   📥 Downloading: {file['name']} ({file['mimeType']})")
+            print(f"      📅 Modified: {file.get('modifiedTime', 'N/A')}")
+            
             try:
                 # Handle Google Sheets vs regular Excel
                 if file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
@@ -330,7 +509,8 @@ def download_excel_files_from_drive(credentials, folder_id, folder_name):
                     'path': file_path,
                     'name': file['name'],
                     'temp_folder': save_folder,
-                    'mime_type': file['mimeType']
+                    'mime_type': file['mimeType'],
+                    'modified_time': file.get('modifiedTime')
                 })
                 print(f"      ✅ Berhasil download: {safe_filename}")
 
@@ -347,10 +527,10 @@ def download_excel_files_from_drive(credentials, folder_id, folder_name):
         return []
 
 # ============================
-# FUNGSI PROSES DATA ERDKK - VERSI DIPERBAIKI DENGAN GAPOKTAN
+# FUNGSI PROSES DATA ERDKK
 # ============================
 def process_erdkk_file(file_path, file_name):
-    """Proses satu file ERDKK - DIPERBAIKI DENGAN MENCARI KECAMATAN DARI GAPOKTAN"""
+    """Proses satu file ERDKK"""
     try:
         print(f"\n   📖 Memproses ERDKK: {file_name}")
 
@@ -422,7 +602,7 @@ def process_erdkk_file(file_path, file_name):
         print(f"   🔍 Kolom Nama Kios: {nama_kios_col}")
         
         # ============================================
-        # PERBAIKAN UTAMA: CARI KOLOM KECAMATAN DARI GAPOKTAN
+        # CARI KOLOM KECAMATAN DARI GAPOKTAN
         # ============================================
         kec_col = ''
         
@@ -805,15 +985,18 @@ def aggregate_erdkk_by_kios(all_erdkk_rows):
     return kios_df
 
 # ============================
-# FUNGSI PROSES DATA REALISASI - VERSI DIPERBAIKI
+# FUNGSI PROSES DATA REALISASI DENGAN TANGGAL INPUT
 # ============================
 def process_realisasi_file(file_path, file_name):
-    """Proses satu file realisasi - DIPERBAIKI UNTUK IDENTIFIKASI KOLOM YANG BENAR"""
+    """Proses satu file realisasi dengan ekstraksi tanggal input"""
     try:
         print(f"\n   📖 Memproses Realisasi: {file_name}")
 
+        # Ekstrak tanggal input terbaru dari file
+        latest_tanggal_input = extract_latest_tanggal_input_from_file(file_path)
+        
         # Baca file Excel dengan dtype=str
-        df = pd.read_excel(file_path, dtype=str)
+        df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
         
         # Clean column names
         df.columns = [clean_column_name(col) for col in df.columns]
@@ -822,7 +1005,7 @@ def process_realisasi_file(file_path, file_name):
         print(f"   📋 Kolom yang ada (15 pertama): {list(df.columns)[:15]}")
         
         # ============================================
-        # PERBAIKAN: IDENTIFIKASI KOLOM YANG LEBIH AKURAT
+        # IDENTIFIKASI KOLOM YANG LEBIH AKURAT
         # ============================================
         
         # Cari kolom NIK/KTP - PRIORITAS TINGGI
@@ -985,7 +1168,7 @@ def process_realisasi_file(file_path, file_name):
                         print(f"   ⚠️  Baris {idx}: NIK '{nik_value}' tidak valid -> '{nik}'")
                     continue
                 
-                # Build result dictionary
+                # Build result dictionary dengan tanggal input
                 result = {
                     'NIK': nik,
                     'NAMA_PETANI': str(row[nama_col]).strip() if nama_col and nama_col in row and pd.notna(row[nama_col]) else '',
@@ -1000,7 +1183,8 @@ def process_realisasi_file(file_path, file_name):
                     'REALISASI_NPK_FORMULA': 0,
                     'REALISASI_ORGANIK': 0,
                     'REALISASI_ORGANIK_CAIR': 0,
-                    'FILE_SOURCE': file_name
+                    'FILE_SOURCE': file_name,
+                    'TANGGAL_INPUT': latest_tanggal_input  # Tambahkan tanggal input
                 }
                 
                 # Hitung realisasi pupuk
@@ -1045,6 +1229,12 @@ def process_realisasi_file(file_path, file_name):
         if skipped_rows > 0:
             print(f"   ⚠️  Dilewati: {skipped_rows} baris (NIK tidak valid/error)")
         
+        # Tampilkan informasi tanggal input
+        if latest_tanggal_input:
+            print(f"   📅 Tanggal input terbaru dari file ini: {latest_tanggal_input.strftime('%d %b %Y %H:%M:%S')}")
+        else:
+            print(f"   ⚠️  Tidak dapat menemukan tanggal input dalam file ini")
+        
         # Tampilkan sample
         if results:
             print(f"\n   🔍 Sample data (baris pertama):")
@@ -1056,6 +1246,8 @@ def process_realisasi_file(file_path, file_name):
             print(f"     UREA: {sample['REALISASI_UREA']}")
             print(f"     NPK: {sample['REALISASI_NPK']}")
             print(f"     Is ACC PUSAT? {is_status_disetujui_pusat(sample['STATUS'])}")
+            if sample.get('TANGGAL_INPUT'):
+                print(f"     TANGGAL INPUT: {sample['TANGGAL_INPUT'].strftime('%d %b %Y %H:%M:%S')}")
         
         return results
 
@@ -1218,7 +1410,7 @@ def aggregate_realisasi_by_kios(all_realisasi_rows, filter_acc_pusat=False):
 # ============================
 # FUNGSI BUAT PERBANDINGAN
 # ============================
-def create_comparison_kecamatan(erdkk_kec_df, realisasi_kec_df_all, realisasi_kec_df_acc):
+def create_comparison_kecamatan(erdkk_kec_df, realisasi_kec_df_all, realisasi_kec_df_acc, latest_tanggal_input=None):
     """Buat tabel perbandingan untuk level kecamatan dengan struktur yang benar"""
     print("\n🔍 Membuat tabel perbandingan KECAMATAN...")
     
@@ -1393,15 +1585,9 @@ def create_comparison_kecamatan(erdkk_kec_df, realisasi_kec_df_all, realisasi_ke
     print(f"   • ALL: {len(comparison_all)} baris (termasuk TOTAL)")
     print(f"   • ACC PUSAT: {len(comparison_acc)} baris (termasuk TOTAL)")
     
-    if len(comparison_all) > 0:
-        print(f"\n📊 Struktur kolom untuk UREA (contoh):")
-        urea_cols = [col for col in comparison_all.columns if 'UREA' in col]
-        print(f"   {urea_cols}")
-        
-        print(f"\n📊 Sample data (termasuk TOTAL):")
-        if len(comparison_all) > 3:
-            sample = pd.concat([comparison_all.head(3), comparison_all.tail(1)])
-            print(sample[['KECAMATAN', 'UREA ERDKK', 'UREA REALISASI', 'UREA SELISIH', 'UREA %']].to_string())
+    # Tambahkan informasi tanggal input terbaru
+    if latest_tanggal_input:
+        print(f"   📅 Tanggal input terbaru dari data realisasi: {latest_tanggal_input.strftime('%d %b %Y %H:%M:%S')}")
     
     return comparison_all, comparison_acc
 
@@ -1521,10 +1707,10 @@ def create_comparison_kios(erdkk_kios_df, realisasi_kios_df_all, realisasi_kios_
     return comparison_all, comparison_acc
 
 # ============================
-# FUNGSI UPDATE GOOGLE SHEETS
+# FUNGSI UPDATE GOOGLE SHEETS DENGAN TANGGAL INPUT
 # ============================
-def format_worksheet(worksheet, df):
-    """Format worksheet dengan warna header dan border"""
+def format_worksheet_with_date(worksheet, df, latest_tanggal_input=None):
+    """Format worksheet dengan warna header, border, dan informasi tanggal"""
     try:
         # Format header (baris 1)
         header_format = {
@@ -1575,8 +1761,39 @@ def format_worksheet(worksheet, df):
             }
         }
         
+        # Format untuk informasi tanggal (baris 1-3, kolom E)
+        date_info_format = {
+            "backgroundColor": {
+                "red": 0.95,
+                "green": 0.95,
+                "blue": 0.85
+            },
+            "textFormat": {
+                "bold": True,
+                "fontSize": 10
+            },
+            "horizontalAlignment": "LEFT",
+            "verticalAlignment": "MIDDLE"
+        }
+        
         # Format header
         worksheet.format("1:1", header_format)
+        
+        # Tambahkan informasi tanggal input di kolom E (kolom 5)
+        if latest_tanggal_input:
+            try:
+                # E1: Label
+                worksheet.update('E1', 'Update per tanggal input')
+                # E2: Tanggal
+                worksheet.update('E2', latest_tanggal_input.strftime('%d %b %Y'))
+                # E3: Jam
+                worksheet.update('E3', latest_tanggal_input.strftime('%H:%M:%S'))
+                
+                # Format kolom E
+                worksheet.format('E1:E3', date_info_format)
+                print(f"      ✅ Informasi tanggal ditambahkan: {latest_tanggal_input.strftime('%d %b %Y %H:%M:%S')}")
+            except Exception as e:
+                print(f"      ⚠️  Gagal menambahkan informasi tanggal: {e}")
         
         # Format baris TOTAL (jika ada)
         total_row = len(df) + 1  # +1 karena header di baris 1
@@ -1609,8 +1826,8 @@ def format_worksheet(worksheet, df):
     except Exception as e:
         print(f"      ⚠️  Gagal formatting: {e}")
 
-def batch_update_worksheets(spreadsheet, updates):
-    """Batch update untuk multiple worksheets dengan formatting"""
+def batch_update_worksheets_with_date(spreadsheet, updates, latest_tanggal_input=None):
+    """Batch update untuk multiple worksheets dengan formatting dan tanggal"""
     print(f"🔄 Memproses batch update untuk {len(updates)} worksheet...")
     
     success_count = 0
@@ -1645,8 +1862,11 @@ def batch_update_worksheets(spreadsheet, updates):
                 value_input_option='USER_ENTERED'
             )
             
-            # Format worksheet
-            format_worksheet(worksheet, data)
+            # Format worksheet dengan tanggal (hanya untuk sheet pertama/kecamatan_all)
+            if sheet_name == "kecamatan_all":
+                format_worksheet_with_date(worksheet, data, latest_tanggal_input)
+            else:
+                format_worksheet_with_date(worksheet, data, None)
             
             print(f"      ✅ Berhasil update data ({len(data)} baris, {len(data.columns)} kolom)")
             success_count += 1
@@ -1662,12 +1882,12 @@ def batch_update_worksheets(spreadsheet, updates):
     return success_count
 
 # ============================
-# FUNGSI UTAMA
+# FUNGSI UTAMA DENGAN TANGGAL INPUT
 # ============================
-def process_erdkk_vs_realisasi():
-    """Fungsi utama untuk analisis perbandingan ERDKK vs Realisasi"""
+def process_erdkk_vs_realisasi_with_date():
+    """Fungsi utama untuk analisis perbandingan ERDKK vs Realisasi dengan tanggal input"""
     print("=" * 80)
-    print("🚀 ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 4 (DIPERBAIKI)")
+    print("🚀 ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 5 (DENGAN TANGGAL INPUT)")
     print("=" * 80)
     
     start_time = datetime.now()
@@ -1751,10 +1971,10 @@ def process_erdkk_vs_realisasi():
                 erdkk_kios_df = pd.DataFrame()
         
         # ============================================
-        # BAGIAN 2: DOWNLOAD DAN PROSES DATA REALISASI
+        # BAGIAN 2: DOWNLOAD DAN PROSES DATA REALISASI DENGAN TANGGAL INPUT
         # ============================================
         print("\n" + "=" * 80)
-        print("📋 BAGIAN 2: PROSES DATA REALISASI")
+        print("📋 BAGIAN 2: PROSES DATA REALISASI DENGAN TANGGAL INPUT")
         print("=" * 80)
         
         # Download file Realisasi
@@ -1769,6 +1989,7 @@ def process_erdkk_vs_realisasi():
             realisasi_kios_all = pd.DataFrame()
             realisasi_kios_acc = pd.DataFrame()
             all_realisasi_rows = []
+            latest_tanggal_input = None
         else:
             print(f"✅ Download selesai: {len(realisasi_files)} file")
             
@@ -1776,6 +1997,7 @@ def process_erdkk_vs_realisasi():
             print("\n🔄 Memproses data Realisasi...")
             all_realisasi_rows = []
             processed_files = 0
+            latest_tanggal_input = None
             
             for file_info in realisasi_files:
                 print(f"\n📄 Processing file {processed_files + 1}/{len(realisasi_files)}")
@@ -1785,12 +2007,27 @@ def process_erdkk_vs_realisasi():
                     all_realisasi_rows.extend(file_rows)
                     processed_files += 1
                     print(f"   ✅ File '{file_info['name']}' berhasil diproses: {len(file_rows)} baris")
+                    
+                    # Cek tanggal input terbaru dari file ini
+                    for row in file_rows:
+                        if 'TANGGAL_INPUT' in row and row['TANGGAL_INPUT']:
+                            if latest_tanggal_input is None or row['TANGGAL_INPUT'] > latest_tanggal_input:
+                                latest_tanggal_input = row['TANGGAL_INPUT']
                 else:
                     print(f"   ⚠️  File '{file_info['name']}' tidak menghasilkan data")
             
             if all_realisasi_rows:
                 print(f"\n✅ Total file realisasi diproses: {processed_files}/{len(realisasi_files)}")
                 print(f"✅ Total baris data realisasi: {len(all_realisasi_rows)}")
+                
+                # Tampilkan informasi tanggal input terbaru
+                if latest_tanggal_input:
+                    print(f"📅 TANGGAL INPUT TERBARU DARI DATA REALISASI:")
+                    print(f"   • Tanggal: {latest_tanggal_input.strftime('%d %b %Y')}")
+                    print(f"   • Jam: {latest_tanggal_input.strftime('%H:%M:%S')}")
+                    print(f"   • Format lengkap: {latest_tanggal_input.strftime('%d %b %Y %H:%M:%S')}")
+                else:
+                    print(f"⚠️  Tidak dapat menentukan tanggal input terbaru dari data realisasi")
                 
                 # Analisis status
                 df_status = pd.DataFrame(all_realisasi_rows)
@@ -1815,6 +2052,7 @@ def process_erdkk_vs_realisasi():
                 realisasi_kec_acc = pd.DataFrame()
                 realisasi_kios_all = pd.DataFrame()
                 realisasi_kios_acc = pd.DataFrame()
+                latest_tanggal_input = None
         
         # ============================================
         # BAGIAN 3: BUAT PERBANDINGAN
@@ -1839,7 +2077,7 @@ def process_erdkk_vs_realisasi():
             # Buat perbandingan untuk kecamatan
             print("\n🔍 Membuat perbandingan KECAMATAN...")
             kecamatan_all, kecamatan_acc = create_comparison_kecamatan(
-                erdkk_kec_df, realisasi_kec_all, realisasi_kec_acc
+                erdkk_kec_df, realisasi_kec_all, realisasi_kec_acc, latest_tanggal_input
             )
             
             # Buat perbandingan untuk kios
@@ -1849,18 +2087,23 @@ def process_erdkk_vs_realisasi():
             )
             
             # ============================================
-            # BAGIAN 4: EXPORT KE GOOGLE SHEETS
+            # BAGIAN 4: EXPORT KE GOOGLE SHEETS DENGAN TANGGAL INPUT
             # ============================================
             print("\n" + "=" * 80)
-            print("📋 BAGIAN 4: EXPORT KE GOOGLE SHEETS")
+            print("📋 BAGIAN 4: EXPORT KE GOOGLE SHEETS DENGAN TANGGAL INPUT")
             print("=" * 80)
             
             print(f"\n📤 Target spreadsheet: {OUTPUT_SHEET_URL}")
+            if latest_tanggal_input:
+                print(f"📅 Informasi tanggal yang akan ditambahkan di Sheet1:")
+                print(f"   • E1: 'Update per tanggal input'")
+                print(f"   • E2: {latest_tanggal_input.strftime('%d %b %Y')}")
+                print(f"   • E3: {latest_tanggal_input.strftime('%H:%M:%S')}")
             
             # Update 4 sheet yang berbeda
             updates = []
             
-            # Sheet 1: kecamatan_all
+            # Sheet 1: kecamatan_all (dengan tanggal)
             if not kecamatan_all.empty:
                 updates.append(("kecamatan_all", kecamatan_all))
                 print(f"   ✅ kecamatan_all: {len(kecamatan_all)} baris")
@@ -1879,7 +2122,7 @@ def process_erdkk_vs_realisasi():
                 print(f"   ✅ kecamatan_acc_pusat: {len(kecamatan_acc)} baris")
             else:
                 # Jika kecamatan_acc kosong, buat dari kecamatan_all dengan realisasi = 0
-                if not kecamatan_all.empty:
+                if not kecamatan_all.empty and 'KECAMATAN' in kecamatan_all.columns:
                     # Buat DataFrame dengan realisasi ACC PUSAT = 0
                     kecamatan_acc_empty = kecamatan_all.copy()
                     for col in kecamatan_acc_empty.columns:
@@ -1948,7 +2191,7 @@ def process_erdkk_vs_realisasi():
                     print(f"   ⚠️  kios_acc_pusat: Sheet kosong dibuat")
             
             if updates:
-                success_count = batch_update_worksheets(spreadsheet, updates)
+                success_count = batch_update_worksheets_with_date(spreadsheet, updates, latest_tanggal_input)
             else:
                 print("⚠️  Tidak ada data untuk di-export")
                 success_count = 0
@@ -2004,12 +2247,26 @@ def process_erdkk_vs_realisasi():
         total_realisasi_urea = realisasi_kec_all['REALISASI_UREA'].sum() if not realisasi_kec_all.empty else 0
         percentage_urea = (total_realisasi_urea / total_erdkk_urea * 100) if total_erdkk_urea > 0 else 0
         
+        # Format informasi tanggal untuk summary
+        tanggal_info = ""
+        if latest_tanggal_input:
+            tanggal_info = f"""
+📅 INFORMASI TANGGAL INPUT REALISASI:
+- Tanggal terbaru: {latest_tanggal_input.strftime('%d %b %Y')}
+- Jam terbaru: {latest_tanggal_input.strftime('%H:%M:%S')}
+- Informasi ditampilkan di Sheet1 (kecamatan_all) kolom E1-E3
+"""
+        else:
+            tanggal_info = "📅 INFORMASI TANGGAL INPUT: Tidak dapat menentukan tanggal input dari data realisasi"
+        
         summary_message = f"""
-ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 4 (DIPERBAIKI)
+ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 5 (DENGAN TANGGAL INPUT)
 
 ⏰ Waktu proses: {duration.seconds // 60}m {duration.seconds % 60}s
-📅 Tanggal: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v4.py
+📅 Tanggal analisis: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
+📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v5.py
+
+{tanggal_info}
 
 📊 DATA YANG DIPROSES:
 - File ERDKK: {len(erdkk_files) if 'erdkk_files' in locals() else 0} file
@@ -2028,6 +2285,7 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 4 (DIPERBAIKI)
 📋 SHEET YANG DIBUAT:
 1. kecamatan_all: Perbandingan ERDKK vs Realisasi (semua status)
    • {('✅ DIBUAT' if 'kecamatan_all' in locals() and not kecamatan_all.empty else '⚠️ KOSONG')}
+   • {('📅 Dengan informasi tanggal input' if latest_tanggal_input else '⚠️ Tanpa informasi tanggal')}
    
 2. kecamatan_acc_pusat: Perbandingan ERDKK vs Realisasi ACC PUSAT saja
    • {('✅ DIBUAT' if 'kecamatan_acc' in locals() and not kecamatan_acc.empty else '✅ DIBUAT (KOSONG)' + ' - Tidak ada data ACC PUSAT')}
@@ -2039,11 +2297,11 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI - VERSI 4 (DIPERBAIKI)
 4. kios_acc_pusat: Perbandingan per Kios (ACC PUSAT saja)
    • {('✅ DIBUAT' if 'kios_acc' in locals() and not kios_acc.empty else '✅ DIBUAT (KOSONG)' + ' - Tidak ada data ACC PUSAT')}
 
-🎯 PERBAIKAN YANG DITERAPKAN:
-1. Menggunakan kolom GAPOKTAN sebagai KECAMATAN jika kolom KECAMATAN tidak ditemukan
-2. Identifikasi kolom yang lebih akurat untuk data realisasi
-3. Tetap membuat sheet meskipun data ACC PUSAT kosong
-4. Improved error handling dan debug output
+🎯 FITUR BARU:
+1. Ekstraksi tanggal input terbaru dari data realisasi
+2. Menampilkan informasi tanggal di Sheet1 (kecamatan_all) kolom E1-E3
+3. Format: E1="Update per tanggal input", E2=Tanggal (02 Jan 2026), E3=Jam (21:40:24)
+4. Improved parsing tanggal dari berbagai format
 
 📤 OUTPUT:
 Spreadsheet: {OUTPUT_SHEET_URL}
@@ -2051,7 +2309,7 @@ Spreadsheet: {OUTPUT_SHEET_URL}
 ✅ PROSES SELESAI: {success_count}/4 sheet berhasil diupdate
 """
         
-        subject = "ANALISIS ERDKK vs REALISASI V4 " + ("BERHASIL" if success_count > 0 else "DENGAN KENDALA")
+        subject = "ANALISIS ERDKK vs REALISASI V5 " + ("BERHASIL" if success_count > 0 else "DENGAN KENDALA")
         send_email_notification(subject, summary_message, is_success=(success_count > 0))
         
         print(f"\n{'✅ ANALISIS SELESAI! 🎉' if success_count > 0 else '⚠️ ANALISIS SELESAI DENGAN KENDALA'}")
@@ -2067,6 +2325,12 @@ Spreadsheet: {OUTPUT_SHEET_URL}
             print(f"   • Total UREA REALISASI: {total_realisasi_urea:,.2f} Kg")
             print(f"   • Persentase: {percentage_urea:.2f}%")
         
+        if latest_tanggal_input:
+            print(f"\n📅 INFORMASI TANGGAL INPUT:")
+            print(f"   • Ditampilkan di Sheet1 (kecamatan_all) kolom E1-E3")
+            print(f"   • Tanggal: {latest_tanggal_input.strftime('%d %b %Y')}")
+            print(f"   • Jam: {latest_tanggal_input.strftime('%H:%M:%S')}")
+        
         return success_count > 0
 
     except Exception as e:
@@ -2074,7 +2338,7 @@ Spreadsheet: {OUTPUT_SHEET_URL}
 ANALISIS PERBANDINGAN ERDKK vs REALISASI GAGAL ❌
 
 📅 Waktu: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v4.py
+📁 Repository: verval-pupuk2/scripts/erdkk_vs_realisasi_fixed_v5.py
 ⚠️ Error: {str(e)}
 
 🔧 Traceback:
@@ -2091,7 +2355,7 @@ ANALISIS PERBANDINGAN ERDKK vs REALISASI GAGAL ❌
 if __name__ == "__main__":
     # Tambahkan error handling global
     try:
-        success = process_erdkk_vs_realisasi()
+        success = process_erdkk_vs_realisasi_with_date()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n\n⚠️ Script dihentikan oleh pengguna")
