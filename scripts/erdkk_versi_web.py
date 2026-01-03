@@ -90,217 +90,62 @@ def clean_nik(nik_value):
     return cleaned_nik if cleaned_nik else None
 
 # ============================
-# FUNGSI GABUNGKAN KOMODITAS
-# ============================
-def gabung_komoditas_unique(komoditas_list):
-    """
-    Menggabungkan komoditas dari kolom G, H, I tanpa duplikat
-    """
-    if not komoditas_list:
-        return ""
-    
-    # Flatten list jika ada list dalam list
-    flat_list = []
-    for item in komoditas_list:
-        if pd.isna(item):
-            continue
-        if isinstance(item, str):
-            # Split jika ada multiple komoditas dalam satu sel
-            items = str(item).split()
-            flat_list.extend(items)
-        else:
-            flat_list.append(str(item))
-    
-    # Hapus duplikat dan kosong
-    unique_komoditas = list(set([k for k in flat_list if k.strip()]))
-    return " ".join(unique_komoditas)
-
-# ============================
-# FUNGSI PROSES DATA (MIRIP DENGAN VBA)
-# ============================
-def proses_data_gabungan(dataframes_list):
-    """
-    Memproses dan menggabungkan data berdasarkan NIK dan Poktan
-    dengan error handling yang lebih baik
-    """
-    if not dataframes_list:
-        return []
-    
-    # Dictionary untuk menyimpan data hasil
-    data_dict = {}
-    
-    hasil_rows = []
-    header = None
-    
-    for df_idx, df in enumerate(dataframes_list):
-        if df.empty:
-            print(f"   ⚠️  Dataframe {df_idx} kosong, dilewati")
-            continue
-            
-        print(f"   📊 Processing dataframe {df_idx + 1}: {len(df)} rows")
-        
-        # Set header dari file pertama yang valid
-        if header is None and not df.empty:
-            original_columns = list(df.columns)
-            # Buat header output sesuai dengan VBA
-            if len(original_columns) >= 9:
-                # Format: A-E, komoditas gabungan, lalu kolom numerik
-                output_header = original_columns[:5] + ["KOMODITAS"] + original_columns[8:]
-            else:
-                output_header = original_columns
-            
-            header = output_header
-            hasil_rows.append(header)
-            print(f"   📋 Header set: {header}")
-        
-        # Proses setiap baris
-        processed_rows = 0
-        for i in range(len(df)):
-            row = df.iloc[i]
-            
-            # Buat key unik seperti di VBA
-            key_parts = []
-            for col in ['KTP', 'NAMA', 'DESA', 'POKTAN', 'KIOS']:
-                if col in df.columns:
-                    val = str(row[col]) if not pd.isna(row[col]) else ""
-                else:
-                    val = ""
-                key_parts.append(val)
-            
-            key = "|".join(key_parts)
-            
-            if key not in data_dict:
-                # Data baru
-                data_dict[key] = {
-                    'data': None,
-                    'komoditas_set': set(),
-                    'index': len(hasil_rows)
-                }
-                
-                # Siapkan row hasil
-                hasil_row = []
-                
-                # Kolom 1-5 (A-E): Data utama
-                for j in range(5):
-                    if j < len(header):
-                        col_name = header[j]
-                        if col_name in df.columns:
-                            val = row[col_name]
-                            # KTP sebagai teks
-                            if j == 0:
-                                hasil_row.append(str(val) if not pd.isna(val) else "")
-                            else:
-                                hasil_row.append(val if not pd.isna(val) else "")
-                        else:
-                            hasil_row.append("")
-                    else:
-                        hasil_row.append("")
-                
-                # Kolom 6: Gabungkan komoditas
-                komoditas_list = []
-                for komoditas_col in ['KOMODITAS_G', 'KOMODITAS_H', 'KOMODITAS_I']:
-                    if komoditas_col in df.columns:
-                        komoditas_list.append(row[komoditas_col])
-                
-                komoditas_str = gabung_komoditas_unique(komoditas_list)
-                data_dict[key]['komoditas_set'] = set(komoditas_str.split()) if komoditas_str else set()
-                hasil_row.append(komoditas_str)
-                
-                # Kolom 7+: Data numerik
-                for j in range(6, len(header)):
-                    col_name = header[j]
-                    if col_name in df.columns:
-                        val = row[col_name]
-                        try:
-                            if pd.isna(val) or val == "":
-                                num_val = 0
-                            else:
-                                num_val = float(str(val).replace(',', '').replace(' ', ''))
-                        except:
-                            num_val = 0
-                    else:
-                        num_val = 0
-                    hasil_row.append(num_val)
-                
-                data_dict[key]['data'] = hasil_row
-                hasil_rows.append(hasil_row)
-                processed_rows += 1
-                
-            else:
-                # Update data yang sudah ada
-                idx = data_dict[key]['index']
-                existing_row = hasil_rows[idx]
-                
-                # Update komoditas
-                komoditas_list = []
-                for komoditas_col in ['KOMODITAS_G', 'KOMODITAS_H', 'KOMODITAS_I']:
-                    if komoditas_col in df.columns:
-                        komoditas_list.append(row[komoditas_col])
-                
-                new_komoditas = gabung_komoditas_unique(komoditas_list)
-                if new_komoditas:
-                    new_set = set(new_komoditas.split())
-                    existing_set = data_dict[key]['komoditas_set']
-                    existing_set.update(new_set)
-                    existing_row[5] = " ".join(existing_set)
-                
-                # Jumlahkan nilai numerik
-                for j in range(6, len(header)):
-                    col_name = header[j]
-                    if col_name in df.columns:
-                        val = row[col_name]
-                        try:
-                            if pd.isna(val) or val == "":
-                                num_val = 0
-                            else:
-                                num_val = float(str(val).replace(',', '').replace(' ', ''))
-                        except:
-                            num_val = 0
-                        
-                        # Jumlahkan dengan existing
-                        try:
-                            existing_val = float(existing_row[j]) if existing_row[j] != "" else 0
-                        except:
-                            existing_val = 0
-                        
-                        existing_row[j] = existing_val + num_val
-        
-        print(f"   ✅ Processed {processed_rows} rows from dataframe {df_idx + 1}")
-    
-    print(f"📊 Total unique keys: {len(data_dict)}")
-    return hasil_rows
-
-# ============================
 # FUNGSI STANDARDISASI KOLOM
 # ============================
 def standardize_columns(df):
     """
-    Standarisasi nama kolom untuk konsistensi dengan handling yang lebih baik
+    Standarisasi nama kolom untuk konsistensi berdasarkan header ERDKK
     """
     if df.empty:
         return df
     
-    # Buat mapping lowercase untuk pencarian
-    column_mapping = {}
-    
-    # Mapping komprehensif untuk berbagai variasi nama kolom
-    mappings = {
-        'KTP': ['nik', 'no ktp', 'ktp', 'no. ktp', 'nomor ktp', 'ktp/nik', 'nik/ktp'],
-        'NAMA': ['nama', 'nama petani', 'nama lengkap', 'nama petani', 'nama farmer'],
-        'DESA': ['desa', 'kelurahan', 'desa/kel', 'desa/kelurahan', 'alamat'],
-        'POKTAN': ['poktan', 'poktan (kelompok tani)', 'kelompok tani', 'nama poktan', 'poktan'],
-        'KIOS': ['kios', 'nama kios', 'pengecer', 'nama pengecer', 'kios/pengecer'],
-        'KOMODITAS_G': ['komoditas', 'jenis tanaman', 'komoditas1', 'tanaman'],
-        'KOMODITAS_H': ['komoditas2', 'jenis tanaman 2'],
-        'KOMODITAS_I': ['komoditas3', 'jenis tanaman 3'],
+    # Mapping kolom berdasarkan header ERDKK yang Anda berikan
+    column_mapping = {
+        # Kolom utama
+        'nama penyuluh': 'Nama Penyuluh',
+        'kode desa': 'Kode Desa',
+        'kode kios pengecer': 'Kode Kios Pengecer',
+        'nama kios pengecer': 'Nama Kios Pengecer',
+        'gapoktan': 'Gapoktan',
+        'nama poktan': 'Nama Poktan',
+        'nama petani': 'Nama Petani',
+        'ktp': 'KTP',
+        'tempat lahir': 'Tempat Lahir',
+        'tanggal lahir': 'Tanggal Lahir',
+        'nama ibu kandung': 'Nama Ibu Kandung',
+        'alamat': 'Alamat',
+        'subsektor': 'Subsektor',
+        'nama desa': 'Nama Desa',
+        
+        # MT1
+        'komoditas mt1': 'Komoditas MT1',
+        'luas lahan (ha) mt1': 'Luas Lahan (Ha) MT1',
+        'pupuk urea (kg) mt1': 'Pupuk Urea (Kg) MT1',
+        'pupuk npk (kg) mt1': 'Pupuk NPK (Kg) MT1',
+        'pupuk npk formula (kg) mt1': 'Pupuk NPK Formula (Kg) MT1',
+        'pupuk organik (kg) mt1': 'Pupuk Organik (Kg) MT1',
+        'pupuk za (kg) mt1': 'Pupuk ZA (Kg) MT1',
+        
+        # MT2
+        'komoditas mt2': 'Komoditas MT2',
+        'luas lahan (ha) mt2': 'Luas Lahan (Ha) MT2',
+        'pupuk urea (kg) mt2': 'Pupuk Urea (Kg) MT2',
+        'pupuk npk (kg) mt2': 'Pupuk NPK (Kg) MT2',
+        'pupuk npk formula (kg) mt2': 'Pupuk NPK Formula (Kg) MT2',
+        'pupuk organik (kg) mt2': 'Pupuk Organik (Kg) MT2',
+        'pupuk za (kg) mt2': 'Pupuk ZA (Kg) MT2',
+        
+        # MT3
+        'komoditas mt3': 'Komoditas MT3',
+        'luas lahan (ha) mt3': 'Luas Lahan (Ha) MT3',
+        'pupuk urea (kg) mt3': 'Pupuk Urea (Kg) MT3',
+        'pupuk npk (kg) mt3': 'Pupuk NPK (Kg) MT3',
+        'pupuk npk formula (kg) mt3': 'Pupuk NPK Formula (Kg) MT3',
+        'pupuk organik (kg) mt3': 'Pupuk Organik (Kg) MT3',
+        'pupuk za (kg) mt3': 'Pupuk ZA (Kg) MT3',
     }
     
-    # Create reverse mapping
-    for standard_name, variants in mappings.items():
-        for variant in variants:
-            column_mapping[variant] = standard_name
-    
-    # Rename columns
+    # Rename columns berdasarkan mapping
     new_columns = []
     for col in df.columns:
         if pd.isna(col):
@@ -314,9 +159,9 @@ def standardize_columns(df):
         else:
             # Cari partial match
             found = False
-            for variant, standard in column_mapping.items():
-                if variant in col_lower:
-                    new_columns.append(standard)
+            for key in column_mapping:
+                if key in col_lower:
+                    new_columns.append(column_mapping[key])
                     found = True
                     break
             if not found:
@@ -328,6 +173,267 @@ def standardize_columns(df):
     df = df.loc[:, ~df.columns.duplicated()]
     
     return df
+
+# ============================
+# FUNGSI GABUNGKAN KOMODITAS UNIK
+# ============================
+def gabung_komoditas_unik(komoditas_list):
+    """
+    Menggabungkan komoditas dari MT1, MT2, MT3 tanpa duplikat
+    """
+    if not komoditas_list:
+        return ""
+    
+    # Flatten list
+    flat_list = []
+    for item in komoditas_list:
+        if pd.isna(item):
+            continue
+        if isinstance(item, str):
+            # Split jika ada multiple komoditas dalam satu sel
+            items = str(item).strip()
+            if items:
+                flat_list.append(items)
+        else:
+            item_str = str(item).strip()
+            if item_str:
+                flat_list.append(item_str)
+    
+    # Hapus duplikat dan kosong, urutkan untuk konsistensi
+    unique_komoditas = sorted(set([k for k in flat_list if k.strip()]))
+    return ", ".join(unique_komoditas)
+
+# ============================
+# FUNGSI KONVERSI KE NUMERIK
+# ============================
+def convert_to_numeric(value):
+    """
+    Konversi nilai ke numeric, handle berbagai format
+    """
+    if pd.isna(value) or value is None:
+        return 0
+    
+    try:
+        # Hapus koma, titik (kecuali desimal), dan spasi
+        value_str = str(value).strip()
+        value_str = value_str.replace(',', '').replace(' ', '')
+        
+        # Handle jika ada titik sebagai pemisah ribuan
+        if '.' in value_str and value_str.count('.') == 1:
+            # Mungkin desimal, biarkan
+            pass
+        else:
+            # Hapus semua titik
+            value_str = value_str.replace('.', '')
+        
+        return float(value_str)
+    except:
+        return 0
+
+# ============================
+# FUNGSI PROSES DATA PIVOT
+# ============================
+def proses_data_pivot(dataframes_list):
+    """
+    Membuat pivot data ERDKK sesuai dengan format yang diminta
+    """
+    if not dataframes_list:
+        return []
+    
+    # Dictionary untuk menyimpan data pivot per key (KTP + Poktan)
+    pivot_dict = {}
+    
+    # Header output sesuai permintaan
+    output_header = [
+        'KTP',
+        'Nama Petani',
+        'Nama Poktan',
+        'Desa',
+        'Kecamatan',
+        'Nama Kios Pengecer',
+        'Komoditas Rencana Tanam 1 Tahun',
+        'Luas Lahan Total (Ha)',
+        # MT1
+        'Pupuk Urea (Kg) MT1',
+        'Pupuk NPK (Kg) MT1',
+        'Pupuk NPK Formula (Kg) MT1',
+        'Pupuk Organik (Kg) MT1',
+        'Pupuk ZA (Kg) MT1',
+        # MT2
+        'Komoditas MT2',
+        'Luas Lahan (Ha) MT2',
+        'Pupuk Urea (Kg) MT2',
+        'Pupuk NPK (Kg) MT2',
+        'Pupuk NPK Formula (Kg) MT2',
+        'Pupuk Organik (Kg) MT2',
+        'Pupuk ZA (Kg) MT2',
+        # MT3
+        'Komoditas MT3',
+        'Luas Lahan (Ha) MT3',
+        'Pupuk Urea (Kg) MT3',
+        'Pupuk NPK (Kg) MT3',
+        'Pupuk NPK Formula (Kg) MT3',
+        'Pupuk Organik (Kg) MT3',
+        'Pupuk ZA (Kg) MT3'
+    ]
+    
+    hasil_rows = [output_header]
+    
+    total_rows_processed = 0
+    
+    for df_idx, df in enumerate(dataframes_list):
+        if df.empty:
+            print(f"   ⚠️  Dataframe {df_idx} kosong, dilewati")
+            continue
+        
+        print(f"   📊 Processing dataframe {df_idx + 1}: {len(df)} rows")
+        
+        for i in range(len(df)):
+            row = df.iloc[i]
+            
+            # Buat key unik berdasarkan KTP dan Nama Poktan
+            ktp_value = row.get('KTP', '') if not pd.isna(row.get('KTP')) else ''
+            poktan_value = row.get('Nama Poktan', '') if not pd.isna(row.get('Nama Poktan')) else ''
+            
+            key = f"{ktp_value}|{poktan_value}"
+            
+            if key not in pivot_dict:
+                # Data baru
+                pivot_dict[key] = {
+                    'KTP': ktp_value,
+                    'Nama Petani': row.get('Nama Petani', '') if not pd.isna(row.get('Nama Petani')) else '',
+                    'Nama Poktan': poktan_value,
+                    'Desa': row.get('Nama Desa', '') if not pd.isna(row.get('Nama Desa')) else '',
+                    'Kecamatan': row.get('Gapoktan', '') if not pd.isna(row.get('Gapoktan')) else '',  # Gunakan Gapoktan untuk Kecamatan
+                    'Nama Kios Pengecer': row.get('Nama Kios Pengecer', '') if not pd.isna(row.get('Nama Kios Pengecer')) else '',
+                    
+                    # Komoditas
+                    'komoditas_set': set(),
+                    
+                    # Luas lahan
+                    'luas_mt1': 0,
+                    'luas_mt2': 0,
+                    'luas_mt3': 0,
+                    'luas_total': 0,
+                    
+                    # MT1 - Pupuk
+                    'urea_mt1': 0,
+                    'npk_mt1': 0,
+                    'npk_formula_mt1': 0,
+                    'organik_mt1': 0,
+                    'za_mt1': 0,
+                    
+                    # MT2 - Data
+                    'komoditas_mt2': row.get('Komoditas MT2', '') if not pd.isna(row.get('Komoditas MT2')) else '',
+                    'luas_mt2_detail': 0,
+                    'urea_mt2': 0,
+                    'npk_mt2': 0,
+                    'npk_formula_mt2': 0,
+                    'organik_mt2': 0,
+                    'za_mt2': 0,
+                    
+                    # MT3 - Data
+                    'komoditas_mt3': row.get('Komoditas MT3', '') if not pd.isna(row.get('Komoditas MT3')) else '',
+                    'luas_mt3_detail': 0,
+                    'urea_mt3': 0,
+                    'npk_mt3': 0,
+                    'npk_formula_mt3': 0,
+                    'organik_mt3': 0,
+                    'za_mt3': 0,
+                }
+            
+            # Tambahkan komoditas ke set
+            for mt_col in ['Komoditas MT1', 'Komoditas MT2', 'Komoditas MT3']:
+                komoditas_value = row.get(mt_col, '')
+                if not pd.isna(komoditas_value) and komoditas_value:
+                    pivot_dict[key]['komoditas_set'].add(str(komoditas_value).strip())
+            
+            # Konversi dan jumlahkan luas lahan
+            # MT1
+            luas_mt1 = convert_to_numeric(row.get('Luas Lahan (Ha) MT1', 0))
+            pivot_dict[key]['luas_mt1'] += luas_mt1
+            
+            # MT2
+            luas_mt2 = convert_to_numeric(row.get('Luas Lahan (Ha) MT2', 0))
+            pivot_dict[key]['luas_mt2'] += luas_mt2
+            pivot_dict[key]['luas_mt2_detail'] += luas_mt2
+            
+            # MT3
+            luas_mt3 = convert_to_numeric(row.get('Luas Lahan (Ha) MT3', 0))
+            pivot_dict[key]['luas_mt3'] += luas_mt3
+            pivot_dict[key]['luas_mt3_detail'] += luas_mt3
+            
+            # Total luas
+            pivot_dict[key]['luas_total'] += (luas_mt1 + luas_mt2 + luas_mt3)
+            
+            # Jumlahkan pupuk MT1
+            pivot_dict[key]['urea_mt1'] += convert_to_numeric(row.get('Pupuk Urea (Kg) MT1', 0))
+            pivot_dict[key]['npk_mt1'] += convert_to_numeric(row.get('Pupuk NPK (Kg) MT1', 0))
+            pivot_dict[key]['npk_formula_mt1'] += convert_to_numeric(row.get('Pupuk NPK Formula (Kg) MT1', 0))
+            pivot_dict[key]['organik_mt1'] += convert_to_numeric(row.get('Pupuk Organik (Kg) MT1', 0))
+            pivot_dict[key]['za_mt1'] += convert_to_numeric(row.get('Pupuk ZA (Kg) MT1', 0))
+            
+            # Jumlahkan pupuk MT2
+            pivot_dict[key]['urea_mt2'] += convert_to_numeric(row.get('Pupuk Urea (Kg) MT2', 0))
+            pivot_dict[key]['npk_mt2'] += convert_to_numeric(row.get('Pupuk NPK (Kg) MT2', 0))
+            pivot_dict[key]['npk_formula_mt2'] += convert_to_numeric(row.get('Pupuk NPK Formula (Kg) MT2', 0))
+            pivot_dict[key]['organik_mt2'] += convert_to_numeric(row.get('Pupuk Organik (Kg) MT2', 0))
+            pivot_dict[key]['za_mt2'] += convert_to_numeric(row.get('Pupuk ZA (Kg) MT2', 0))
+            
+            # Jumlahkan pupuk MT3
+            pivot_dict[key]['urea_mt3'] += convert_to_numeric(row.get('Pupuk Urea (Kg) MT3', 0))
+            pivot_dict[key]['npk_mt3'] += convert_to_numeric(row.get('Pupuk NPK (Kg) MT3', 0))
+            pivot_dict[key]['npk_formula_mt3'] += convert_to_numeric(row.get('Pupuk NPK Formula (Kg) MT3', 0))
+            pivot_dict[key]['organik_mt3'] += convert_to_numeric(row.get('Pupuk Organik (Kg) MT3', 0))
+            pivot_dict[key]['za_mt3'] += convert_to_numeric(row.get('Pupuk ZA (Kg) MT3', 0))
+            
+            total_rows_processed += 1
+    
+    print(f"   📊 Data diproses: {total_rows_processed} baris")
+    print(f"   🎯 Unique keys: {len(pivot_dict)}")
+    
+    # Konversi dictionary ke list untuk output
+    for key, data in pivot_dict.items():
+        # Format komoditas
+        komoditas_str = ", ".join(sorted(data['komoditas_set'])) if data['komoditas_set'] else ""
+        
+        # Buat row output
+        output_row = [
+            data['KTP'],
+            data['Nama Petani'],
+            data['Nama Poktan'],
+            data['Desa'],
+            data['Kecamatan'],
+            data['Nama Kios Pengecer'],
+            komoditas_str,
+            round(data['luas_total'], 2),
+            # MT1
+            round(data['urea_mt1'], 2),
+            round(data['npk_mt1'], 2),
+            round(data['npk_formula_mt1'], 2),
+            round(data['organik_mt1'], 2),
+            round(data['za_mt1'], 2),
+            # MT2
+            data['komoditas_mt2'],
+            round(data['luas_mt2_detail'], 2),
+            round(data['urea_mt2'], 2),
+            round(data['npk_mt2'], 2),
+            round(data['npk_formula_mt2'], 2),
+            round(data['organik_mt2'], 2),
+            round(data['za_mt2'], 2),
+            # MT3
+            data['komoditas_mt3'],
+            round(data['luas_mt3_detail'], 2),
+            round(data['urea_mt3'], 2),
+            round(data['npk_mt3'], 2),
+            round(data['npk_formula_mt3'], 2),
+            round(data['organik_mt3'], 2),
+            round(data['za_mt3'], 2),
+        ]
+        
+        hasil_rows.append(output_row)
+    
+    return hasil_rows
 
 # ============================
 # DOWNLOAD FILE EXCEL DARI DRIVE
@@ -474,7 +580,7 @@ def main():
         nik_cleaning_log = []
 
         print("=" * 60)
-        print("🔍 MEMULAI PROSES REKAP DATA ERDKK - VERSI WEB")
+        print("🔍 MEMULAI PROSES REKAP DATA ERDKK - PIVOT VERSION")
         print("=" * 60)
         print(f"📁 Folder ID: {FOLDER_ID}")
         print(f"📊 Spreadsheet ID: {SPREADSHEET_ID}")
@@ -549,30 +655,25 @@ def main():
                 
                 print(f"   ✅ Berhasil: {original_count} → {after_clean} baris")
             else:
-                print(f"   ⚠️  Kolom KTP/NIK tidak ditemukan dalam file")
-                log.append(f"- {filename}: KOLOM KTP/NIK TIDAK DITEMUKAN")
+                print(f"   ⚠️  Kolom KTP tidak ditemukan dalam file")
+                log.append(f"- {filename}: KOLOM KTP TIDAK DITEMUKAN")
 
         print()
         
         if not all_dataframes:
             raise ValueError("❌ Tidak ada data yang berhasil diproses dari semua file")
 
-        # 3. Proses dan gabungkan data (mirip VBA)
-        print(f"🔄 Menggabungkan {len(all_dataframes)} file data...")
-        hasil_gabungan = proses_data_gabungan(all_dataframes)
+        # 3. Proses dan buat pivot data
+        print(f"🔄 Membuat pivot data dari {len(all_dataframes)} file...")
+        hasil_pivot = proses_data_pivot(all_dataframes)
         
-        if len(hasil_gabungan) < 2:  # Hanya header, tidak ada data
-            raise ValueError("❌ Tidak ada data yang berhasil digabungkan")
+        if len(hasil_pivot) < 2:  # Hanya header, tidak ada data
+            raise ValueError("❌ Tidak ada data yang berhasil dipivot")
         
-        print(f"✅ Data berhasil digabung: {len(hasil_gabungan) - 1} baris hasil")
-        print(f"   📋 Header: {hasil_gabungan[0]}")
+        print(f"✅ Pivot data selesai: {len(hasil_pivot) - 1} baris hasil")
+        print(f"   📋 Kolom output: {len(hasil_pivot[0])} kolom")
 
-        # 4. Konversi ke DataFrame untuk penulisan
-        header = hasil_gabungan[0]
-        data = hasil_gabungan[1:]
-        df_hasil = pd.DataFrame(data, columns=header)
-
-        # 5. Tulis ke Google Sheet
+        # 4. Tulis ke Google Sheet
         print()
         print("=" * 60)
         print("📤 MENULIS DATA KE GOOGLE SHEETS")
@@ -593,20 +694,20 @@ def main():
             print(f"⚠️  Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
             ws = sh.add_worksheet(
                 title=SHEET_NAME, 
-                rows=max(1000, len(df_hasil) + 100), 
-                cols=len(df_hasil.columns)
+                rows=max(1000, len(hasil_pivot) + 100), 
+                cols=len(hasil_pivot[0])
             )
             print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat")
         except Exception as e:
             raise ValueError(f"❌ Gagal mengakses worksheet: {str(e)}")
         
         # Tulis data
-        success = write_to_google_sheet(ws, hasil_gabungan)
+        success = write_to_google_sheet(ws, hasil_pivot)
         
         if not success:
             raise ValueError("❌ Gagal menulis data ke Google Sheets")
 
-        # 6. Buat laporan sukses
+        # 5. Buat laporan sukses
         print()
         print("=" * 60)
         print("✅ PROSES SELESAI")
@@ -614,14 +715,15 @@ def main():
         
         now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
         success_message = f"""
-REKAP DATA ERDKK BERHASIL DIPROSES ✓
+REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 
 📅 Tanggal Proses: {now}
 📁 Jumlah File: {file_count}
 📊 Total Data Awal: {total_rows_original} baris
 🧹 Data Setelah Cleaning: {total_rows_cleaned} baris
-📈 Hasil Gabungan: {len(df_hasil)} baris
-🏢 Unique NIK-Poktan: {len(df_hasil)}
+📈 Hasil Pivot: {len(hasil_pivot) - 1} baris
+🏢 Unique KTP-Poktan: {len(hasil_pivot) - 1}
+📊 Kolom Output: {len(hasil_pivot[0])} kolom
 
 📋 DETAIL FILE:
 {chr(10).join(log)}
@@ -633,25 +735,27 @@ REKAP DATA ERDKK BERHASIL DIPROSES ✓
 ✅ DATA TELAH BERHASIL DIUPLOAD:
 📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
 📄 Sheet: {SHEET_NAME}
-📈 Baris Data: {len(df_hasil)}
-📊 Kolom Data: {len(df_hasil.columns)}
+📈 Baris Data: {len(hasil_pivot) - 1}
+📊 Kolom Data: {len(hasil_pivot[0])}
 
 🔧 FITUR YANG DITERAPKAN:
-1. Penggabungan berdasarkan NIK, Nama, Desa, Poktan, Kios
-2. Penggabungan komoditas tanpa duplikat
-3. Penjumlahan nilai numerik untuk data duplikat
-4. Format NIK sebagai teks
-5. Standarisasi nama kolom
+1. Pivot berdasarkan KTP + Nama Poktan
+2. Gabungkan semua komoditas (MT1, MT2, MT3) tanpa duplikat
+3. Total luas lahan = MT1 + MT2 + MT3
+4. Gunakan Gapoktan sebagai Kecamatan
+5. Penjumlahan semua pupuk per MT
+6. Format NIK sebagai teks
+7. Standarisasi nama kolom
 
 📍 REPOSITORY: {os.environ.get('GITHUB_REPOSITORY', 'verval-pupuk2')}
 🔄 WORKFLOW RUN: {os.environ.get('GITHUB_RUN_ID', 'N/A')}
 """
 
-        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {len(df_hasil)} baris")
+        print(f"📊 Ringkasan: {now}, File: {file_count}, Data: {len(hasil_pivot) - 1} baris")
 
-        # 7. Kirim email notifikasi sukses
+        # 6. Kirim email notifikasi sukses
         print("📧 Mengirim notifikasi email...")
-        email_sent = send_email_notification("REKAP DATA ERDKK BERHASIL", success_message, is_success=True)
+        email_sent = send_email_notification("REKAP DATA ERDKK BERHASIL (PIVOT)", success_message, is_success=True)
         
         if email_sent:
             print("✅ Email notifikasi terkirim")
