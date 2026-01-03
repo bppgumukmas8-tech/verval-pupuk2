@@ -243,7 +243,7 @@ def proses_data_pivot(dataframes_list):
     # Dictionary untuk menyimpan data pivot per key (KTP + Poktan)
     pivot_dict = {}
     
-    # Header output sesuai permintaan
+    # Header output sesuai permintaan - TANPA kolom luas lahan per MT
     output_header = [
         'KTP',
         'Nama Petani',
@@ -251,25 +251,21 @@ def proses_data_pivot(dataframes_list):
         'Desa',
         'Kecamatan',
         'Nama Kios Pengecer',
-        'Komoditas Rencana Tanam 1 Tahun',
-        'Luas Lahan Total (Ha)',
-        # MT1
+        'Komoditas',  # Kolom 7: Komoditas saja
+        'Rencana Tanam 1 Tahun (Ha)',  # Kolom 8: Total luas lahan
+        # MT1 - Pupuk saja
         'Pupuk Urea (Kg) MT1',
         'Pupuk NPK (Kg) MT1',
         'Pupuk NPK Formula (Kg) MT1',
         'Pupuk Organik (Kg) MT1',
         'Pupuk ZA (Kg) MT1',
-        # MT2
-        'Komoditas MT2',
-        'Luas Lahan (Ha) MT2',
+        # MT2 - Pupuk saja (TANPA luas lahan)
         'Pupuk Urea (Kg) MT2',
         'Pupuk NPK (Kg) MT2',
         'Pupuk NPK Formula (Kg) MT2',
         'Pupuk Organik (Kg) MT2',
         'Pupuk ZA (Kg) MT2',
-        # MT3
-        'Komoditas MT3',
-        'Luas Lahan (Ha) MT3',
+        # MT3 - Pupuk saja (TANPA luas lahan)
         'Pupuk Urea (Kg) MT3',
         'Pupuk NPK (Kg) MT3',
         'Pupuk NPK Formula (Kg) MT3',
@@ -310,10 +306,7 @@ def proses_data_pivot(dataframes_list):
                     # Komoditas
                     'komoditas_set': set(),
                     
-                    # Luas lahan
-                    'luas_mt1': 0,
-                    'luas_mt2': 0,
-                    'luas_mt3': 0,
+                    # Luas lahan total (MT1 + MT2 + MT3)
                     'luas_total': 0,
                     
                     # MT1 - Pupuk
@@ -323,18 +316,14 @@ def proses_data_pivot(dataframes_list):
                     'organik_mt1': 0,
                     'za_mt1': 0,
                     
-                    # MT2 - Data
-                    'komoditas_mt2': row.get('Komoditas MT2', '') if not pd.isna(row.get('Komoditas MT2')) else '',
-                    'luas_mt2_detail': 0,
+                    # MT2 - Pupuk
                     'urea_mt2': 0,
                     'npk_mt2': 0,
                     'npk_formula_mt2': 0,
                     'organik_mt2': 0,
                     'za_mt2': 0,
                     
-                    # MT3 - Data
-                    'komoditas_mt3': row.get('Komoditas MT3', '') if not pd.isna(row.get('Komoditas MT3')) else '',
-                    'luas_mt3_detail': 0,
+                    # MT3 - Pupuk
                     'urea_mt3': 0,
                     'npk_mt3': 0,
                     'npk_formula_mt3': 0,
@@ -348,22 +337,11 @@ def proses_data_pivot(dataframes_list):
                 if not pd.isna(komoditas_value) and komoditas_value:
                     pivot_dict[key]['komoditas_set'].add(str(komoditas_value).strip())
             
-            # Konversi dan jumlahkan luas lahan
-            # MT1
+            # Konversi dan jumlahkan luas lahan TOTAL (MT1 + MT2 + MT3)
             luas_mt1 = convert_to_numeric(row.get('Luas Lahan (Ha) MT1', 0))
-            pivot_dict[key]['luas_mt1'] += luas_mt1
-            
-            # MT2
             luas_mt2 = convert_to_numeric(row.get('Luas Lahan (Ha) MT2', 0))
-            pivot_dict[key]['luas_mt2'] += luas_mt2
-            pivot_dict[key]['luas_mt2_detail'] += luas_mt2
-            
-            # MT3
             luas_mt3 = convert_to_numeric(row.get('Luas Lahan (Ha) MT3', 0))
-            pivot_dict[key]['luas_mt3'] += luas_mt3
-            pivot_dict[key]['luas_mt3_detail'] += luas_mt3
             
-            # Total luas
             pivot_dict[key]['luas_total'] += (luas_mt1 + luas_mt2 + luas_mt3)
             
             # Jumlahkan pupuk MT1
@@ -405,25 +383,21 @@ def proses_data_pivot(dataframes_list):
             data['Desa'],
             data['Kecamatan'],
             data['Nama Kios Pengecer'],
-            komoditas_str,
-            round(data['luas_total'], 2),
-            # MT1
+            komoditas_str,  # Kolom 7: Komoditas
+            round(data['luas_total'], 2),  # Kolom 8: Rencana Tanam 1 Tahun
+            # MT1 - Pupuk saja
             round(data['urea_mt1'], 2),
             round(data['npk_mt1'], 2),
             round(data['npk_formula_mt1'], 2),
             round(data['organik_mt1'], 2),
             round(data['za_mt1'], 2),
-            # MT2
-            data['komoditas_mt2'],
-            round(data['luas_mt2_detail'], 2),
+            # MT2 - Pupuk saja (TANPA luas lahan)
             round(data['urea_mt2'], 2),
             round(data['npk_mt2'], 2),
             round(data['npk_formula_mt2'], 2),
             round(data['organik_mt2'], 2),
             round(data['za_mt2'], 2),
-            # MT3
-            data['komoditas_mt3'],
-            round(data['luas_mt3_detail'], 2),
+            # MT3 - Pupuk saja (TANPA luas lahan)
             round(data['urea_mt3'], 2),
             round(data['npk_mt3'], 2),
             round(data['npk_formula_mt3'], 2),
@@ -672,6 +646,7 @@ def main():
         
         print(f"✅ Pivot data selesai: {len(hasil_pivot) - 1} baris hasil")
         print(f"   📋 Kolom output: {len(hasil_pivot[0])} kolom")
+        print(f"   📊 Contoh header: {hasil_pivot[0]}")
 
         # 4. Tulis ke Google Sheet
         print()
@@ -732,20 +707,24 @@ REKAP DATA ERDKK BERHASIL DIPROSES (PIVOT) ✓
 {chr(10).join(nik_cleaning_log[:5])}
 {"... (masih ada " + str(len(nik_cleaning_log) - 5) + " entri lainnya)" if len(nik_cleaning_log) > 5 else "Tidak ada NIK yang dibersihkan"}
 
+📊 STRUKTUR OUTPUT:
+1. KTP
+2. Nama Petani
+3. Nama Poktan
+4. Desa
+5. Kecamatan (dari Gapoktan)
+6. Nama Kios Pengecer
+7. Komoditas (semua komoditas unik)
+8. Rencana Tanam 1 Tahun (Ha) - total luas MT1+MT2+MT3
+9-13. Pupuk MT1 (Urea, NPK, NPK Formula, Organik, ZA)
+14-18. Pupuk MT2 (Urea, NPK, NPK Formula, Organik, ZA)
+19-23. Pupuk MT3 (Urea, NPK, NPK Formula, Organik, ZA)
+
 ✅ DATA TELAH BERHASIL DIUPLOAD:
 📊 Spreadsheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}
 📄 Sheet: {SHEET_NAME}
 📈 Baris Data: {len(hasil_pivot) - 1}
 📊 Kolom Data: {len(hasil_pivot[0])}
-
-🔧 FITUR YANG DITERAPKAN:
-1. Pivot berdasarkan KTP + Nama Poktan
-2. Gabungkan semua komoditas (MT1, MT2, MT3) tanpa duplikat
-3. Total luas lahan = MT1 + MT2 + MT3
-4. Gunakan Gapoktan sebagai Kecamatan
-5. Penjumlahan semua pupuk per MT
-6. Format NIK sebagai teks
-7. Standarisasi nama kolom
 
 📍 REPOSITORY: {os.environ.get('GITHUB_REPOSITORY', 'verval-pupuk2')}
 🔄 WORKFLOW RUN: {os.environ.get('GITHUB_RUN_ID', 'N/A')}
