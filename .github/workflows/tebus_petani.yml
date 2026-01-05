@@ -1,0 +1,56 @@
+name: Tebus Petani
+
+on:
+  schedule:
+    - cron: '0 18 * * *'   # 01.00 WIB
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Ambil source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            pandas \
+            numpy \
+            google-api-python-client \
+            google-auth \
+            gspread \
+            openpyxl \
+            xlrd
+
+      # 4️⃣ (Opsional) Debug struktur file
+      - name: Debug file structure
+        run: |
+          echo "Root repo:"
+          ls -la
+          echo "Isi folder scripts:"
+          ls -la scripts
+
+      # 5️⃣ Jalankan script tebus_petani.py
+      - name: Run tebus_petani
+        env:
+          # Google Service Account
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+
+          # Email Notification Secrets
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+        run: |
+          cd scripts
+          python tebus_petani.py
