@@ -23,7 +23,7 @@ SPREADSHEET_ID = "1wcfplBgnpZmYZR-I6p774DZKBjz8cG326F8Z_EK4KDM"
 SHEET_NAME = "Rekap_Gabungan"
 
 # ============================
-# LOAD CREDENTIALS & EMAIL
+# LOAD CREDENTIALS DAN KONFIGURASI EMAIL
 # ============================
 creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 if not creds_json:
@@ -33,13 +33,17 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_EMAIL_PASSWORD = os.getenv("SENDER_EMAIL_PASSWORD")
 RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS")
 
-if not SENDER_EMAIL or not SENDER_EMAIL_PASSWORD or not RECIPIENT_EMAILS:
-    raise ValueError("❌ SECRET EMAIL TIDAK LENGKAP")
+if not SENDER_EMAIL:
+    raise ValueError("❌ SECRET SENDER_EMAIL TIDAK TERBACA")
+if not SENDER_EMAIL_PASSWORD:
+    raise ValueError("❌ SECRET SENDER_EMAIL_PASSWORD TIDAK TERBACA")
+if not RECIPIENT_EMAILS:
+    raise ValueError("❌ SECRET RECIPIENT_EMAILS TIDAK TERBACA")
 
 try:
     recipient_list = json.loads(RECIPIENT_EMAILS)
 except json.JSONDecodeError:
-    recipient_list = [e.strip() for e in RECIPIENT_EMAILS.split(",")]
+    recipient_list = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
 
 EMAIL_CONFIG = {
     "smtp_server": "smtp.gmail.com",
@@ -61,60 +65,76 @@ gc = gspread.authorize(credentials)
 drive_service = build("drive", "v3", credentials=credentials)
 
 # ============================
-# UTILITIES
+# FUNGSI BERSIHKAN NIK
 # ============================
 def clean_nik(nik_value):
     if pd.isna(nik_value) or nik_value is None:
         return None
-    cleaned = re.sub(r"\D", "", str(nik_value))
-    if len(cleaned) != 16:
-        print(f"⚠️  NIK tidak standar: {nik_value} -> {cleaned}")
-    return cleaned if cleaned else None
-
-def parse_tanggal_tebus(val):
-    if pd.isna(val) or val in ("", None):
-        return None
-    if isinstance(val, datetime):
-        return val
-    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(str(val), fmt)
-        except ValueError:
-            continue
-    print(f"⚠️  Format tanggal tidak dikenali: {val}")
-    return None
-
-def urutkan_data_per_nik(group):
-    g = group.copy()
-    g["TGL_SORT"] = g["TGL TEBUS"].apply(parse_tanggal_tebus)
-    g = g[g["TGL_SORT"].notna()]
-    return g.sort_values("TGL_SORT")
+    nik_str = str(nik_value)
+    cleaned_nik = re.sub(r'\D', '', nik_str)
+    if len(cleaned_nik) != 16:
+        print(f"⚠️  NIK tidak standar: {nik_value} -> {cleaned_nik}")
+    return cleaned_nik if cleaned_nik else None
 
 # ============================
-# EMAIL
+# FUNGSI KONVERSI TANGGAL
+# ============================
+def parse_tanggal_tebus(tanggal_str):
+    if pd.isna(tanggal_str) or tanggal_str is None or tanggal_str == "":
+        return None
+
+    if isinstance(tanggal_str, datetime):
+        return tanggal_str
+
+    try:
+        return datetime.strptime(str(tanggal_str), '%d-%m-%Y')
+    except ValueError:
+        try:
+            return datetime.strptime(str(tanggal_str), '%d/%m/%Y')
+        except ValueError:
+            try:
+                return datetime.strptime(str(tanggal_str), '%Y-%m-%d')
+            except ValueError:
+                print(f"⚠️  Format tanggal tidak dikenali: {tanggal_str}")
+                return None
+
+# ============================
+# FUNGSI URUTKAN DATA
+# ============================
+def urutkan_data_per_nik(group):
+    group = group.copy()
+    group['TGL_TEBS_DATETIME'] = group['TGL TEBUS'].apply(parse_tanggal_tebus)
+    group = group[group['TGL_TEBS_DATETIME'].notna()]
+    if len(group) == 0:
+        return group
+    return group.sort_values('TGL_TEBS_DATETIME')
+
+# ============================
+# FUNGSI KIRIM EMAIL
 # ============================
 def send_email_notification(subject, message, is_success=True):
     try:
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_CONFIG["sender_email"]
-        msg["To"] = ", ".join(EMAIL_CONFIG["recipient_emails"])
-        msg["Subject"] = subject
+        msg['From'] = EMAIL_CONFIG["sender_email"]
+        msg['To'] = ", ".join(EMAIL_CONFIG["recipient_emails"])
+        msg['Subject'] = subject
 
-        color = "green" if is_success else "red"
-        bg = "#f0f8f0" if is_success else "#ffe6e6"
+        if is_success:
+            email_body = f"""
+            <html><body>
+            <h2 style="color:green;">{subject}</h2>
+            <div>{message.replace(chr(10), '<br>')}</div>
+            </body></html>
+            """
+        else:
+            email_body = f"""
+            <html><body>
+            <h2 style="color:red;">{subject}</h2>
+            <div>{message.replace(chr(10), '<br>')}</div>
+            </body></html>
+            """
 
-        body = f"""
-        <html>
-        <body>
-        <h2 style="color:{color}">{subject}</h2>
-        <div style="background:{bg};padding:15px;border-radius:6px">
-        {message.replace(chr(10), "<br>")}
-        </div>
-        </body>
-        </html>
-        """
-
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(MIMEText(email_body, 'html'))
 
         with smtplib.SMTP(EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"]) as server:
             server.starttls()
@@ -126,26 +146,30 @@ def send_email_notification(subject, message, is_success=True):
 
         return True
     except Exception as e:
-        print(f"❌ Email gagal: {e}")
+        print(f"❌ Gagal mengirim email: {e}")
         return False
 
 # ============================
-# DOWNLOAD EXCEL
+# DOWNLOAD FILE EXCEL
 # ============================
 def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
     os.makedirs(save_folder, exist_ok=True)
-    q = f"'{folder_id}' in parents and mimeType contains 'spreadsheetml'"
-    files = drive_service.files().list(q=q, fields="files(id,name)").execute()["files"]
+    query = f"'{folder_id}' in parents and mimeType contains 'spreadsheetml'"
+    results = drive_service.files().list(
+        q=query,
+        fields="files(id,name)"
+    ).execute()
 
+    files = results.get("files", [])
     if not files:
-        raise ValueError("Tidak ada file Excel di folder Drive")
+        raise ValueError("Tidak ada file Excel")
 
     paths = []
     for f in files:
-        req = drive_service.files().get_media(fileId=f["id"])
+        request = drive_service.files().get_media(fileId=f["id"])
         path = os.path.join(save_folder, f["name"])
         with io.FileIO(path, "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, req)
+            downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
@@ -153,52 +177,72 @@ def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
     return paths
 
 # ============================
-# WRITE GOOGLE SHEET (FIX GRID)
+# TULIS KE GOOGLE SHEET
 # ============================
-def write_to_google_sheet(ws, df):
-    print(f"📤 Menulis {len(df)} baris ke Google Sheets")
-    ws.clear()
+def write_to_google_sheet(worksheet, dataframe):
+    print(f"📤 Menulis {len(dataframe)} baris data ke Google Sheets...")
 
-    data = [df.columns.tolist()] + df.values.tolist()
-    total_rows = len(data)
-    total_cols = len(df.columns)
+    print("🧹 Membersihkan data lama di sheet...")
+    worksheet.clear()
 
-    # ===== FIX GRID LIMIT (WAJIB) =====
-    if ws.row_count < total_rows:
-        ws.add_rows(total_rows - ws.row_count)
-        print(f"➕ Tambah baris: {total_rows - ws.row_count}")
+    data_to_update = [dataframe.columns.values.tolist()] + dataframe.values.tolist()
+    total_rows_to_write = len(data_to_update)
 
-    if ws.col_count < total_cols:
-        ws.add_cols(total_cols - ws.col_count)
-        print(f"➕ Tambah kolom: {total_cols - ws.col_count}")
-    # =================================
+    # >>> INJECT GRID FIX START <<<
+    required_rows = total_rows_to_write
+    required_cols = len(dataframe.columns)
 
-    CHUNK = 10000
-    for i in range(0, total_rows, CHUNK):
-        chunk = data[i:i + CHUNK]
-        start = f"A{i + 1}"
-        print(f"   📄 Menulis baris {i+1}-{i+len(chunk)}")
-        ws.update(
-            range_name=start,
-            values=chunk,
-            value_input_option="USER_ENTERED"
-        )
-        time.sleep(2)
+    current_rows = worksheet.row_count
+    current_cols = worksheet.col_count
+
+    if current_rows < required_rows:
+        worksheet.add_rows(required_rows - current_rows)
+        print(f"➕ Menambah {required_rows - current_rows} baris sheet")
+
+    if current_cols < required_cols:
+        worksheet.add_cols(required_cols - current_cols)
+        print(f"➕ Menambah {required_cols - current_cols} kolom sheet")
+    # >>> INJECT GRID FIX END <<<
+
+    CHUNK_SIZE = 10000
+    chunk_count = (total_rows_to_write + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    for chunk_index in range(chunk_count):
+        start_row = chunk_index * CHUNK_SIZE
+        end_row = min(start_row + CHUNK_SIZE, total_rows_to_write)
+        current_chunk = data_to_update[start_row:end_row]
+        start_cell = f'A{start_row + 1}'
+
+        try:
+            worksheet.update(
+                range_name=start_cell,
+                values=current_chunk,
+                value_input_option='USER_ENTERED'
+            )
+            if chunk_index < chunk_count - 1:
+                time.sleep(2)
+        except Exception as e:
+            time.sleep(5)
+            worksheet.update(
+                range_name=start_cell,
+                values=current_chunk,
+                value_input_option='USER_ENTERED'
+            )
 
 # ============================
-# MAIN
+# PROSES UTAMA
 # ============================
 def main():
     try:
-        excel_files = download_excel_files(FOLDER_ID)
         all_data = []
+        excel_files = download_excel_files(FOLDER_ID)
 
-        for f in excel_files:
-            df = pd.read_excel(f, dtype=str)
-            if "NIK" not in df.columns:
+        for fpath in excel_files:
+            df = pd.read_excel(fpath, dtype=str)
+            if 'NIK' not in df.columns:
                 continue
-            df["NIK"] = df["NIK"].apply(clean_nik)
-            df = df[df["NIK"].notna()]
+            df['NIK'] = df['NIK'].apply(clean_nik)
+            df = df[df['NIK'].notna()]
             all_data.append(df)
 
         combined = pd.concat(all_data, ignore_index=True)
@@ -215,16 +259,16 @@ def main():
         combined = combined[cols]
 
         rows = []
-        for nik, grp in combined.groupby("NIK"):
-            g = urutkan_data_per_nik(grp)
-            texts = []
-            for i, r in enumerate(g.itertuples(), 1):
-                texts.append(
-                    f"{i}) {r.NAMA_PETANI} Tgl {r._13} No {r._2} "
-                    f"Kios {r._3} Kec {r._1}"
+        for nik, group in combined.groupby("NIK"):
+            group_sorted = urutkan_data_per_nik(group)
+            list_info = []
+            for i, (_, row) in enumerate(group_sorted.iterrows(), start=1):
+                list_info.append(
+                    f"{i}) {row['NAMA PETANI']} Tgl {row['TGL TEBUS']} "
+                    f"No {row['NO TRANSAKSI']} Kios {row['NAMA KIOS']}"
                 )
-            nama = g["NAMA PETANI"].iloc[0] if len(g) else ""
-            rows.append([nik, nama, "\n".join(texts)])
+            nama = group_sorted['NAMA PETANI'].iloc[0] if len(group_sorted) else ""
+            rows.append([nik, nama, "\n".join(list_info)])
 
         out_df = pd.DataFrame(rows, columns=["NIK", "Nama", "Data"])
 
@@ -234,7 +278,7 @@ def main():
         except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(
                 title=SHEET_NAME,
-                rows=max(1000, len(out_df) + 10),
+                rows=max(1000, len(out_df) + 100),
                 cols=len(out_df.columns)
             )
 
@@ -245,8 +289,6 @@ def main():
             f"Total NIK: {len(out_df)}",
             True
         )
-
-        print("🎉 SELESAI TANPA ERROR")
         return True
 
     except Exception as e:
