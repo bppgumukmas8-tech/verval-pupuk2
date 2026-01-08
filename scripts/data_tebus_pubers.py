@@ -8,7 +8,7 @@ import time
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 import smtplib
 from email.mime.text import MIMEText
@@ -24,7 +24,6 @@ SHEET_NAME = "Rekap_Gabungan"
 
 # Optimasi untuk data besar
 BATCH_SIZE = 3000  # Ukuran batch untuk API requests
-MAX_ROWS_PER_BATCH = 10000  # Maks baris per batch processing
 MAX_RETRIES = 3  # Maks percobaan retry
 RETRY_DELAY = 2  # Delay antar retry (detik)
 BUFFER_ROWS = 1000  # Buffer untuk resize worksheet
@@ -96,47 +95,87 @@ def clean_nik(nik_value):
     return cleaned_nik if cleaned_nik else None
 
 # ============================
-# FUNGSI KONVERSI TANGGAL
+# FUNGSI KONVERSI TANGGAL (DIPERBAIKI - hanya dd-mm-yyyy)
 # ============================
 def parse_tanggal_tebus(tanggal_str):
     """
-    Mengonversi string tanggal format dd-mm-yyyy menjadi datetime object
+    Mengonversi string tanggal menjadi format dd-mm-yyyy
+    Menghapus bagian waktu jika ada
     """
     if pd.isna(tanggal_str) or tanggal_str is None or tanggal_str == "":
         return None
     
     try:
-        # Coba parsing format dd-mm-yyyy
-        return datetime.strptime(str(tanggal_str), '%d-%m-%Y')
-    except ValueError:
-        try:
-            # Coba format dd-mm-yyyy HH:MM:SS
-            return datetime.strptime(str(tanggal_str), '%d-%m-%Y %H:%M:%S')
-        except ValueError:
+        tanggal_str = str(tanggal_str).strip()
+        
+        # Jika sudah datetime object
+        if isinstance(tanggal_str, datetime):
+            return tanggal_str.strftime('%d-%m-%Y')
+        
+        # Coba berbagai format dan konversi ke dd-mm-yyyy
+        # Format yyyy-mm-dd HH:MM:SS
+        if re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', tanggal_str):
+            dt = datetime.strptime(tanggal_str, '%Y-%m-%d %H:%M:%S')
+            return dt.strftime('%d-%m-%Y')
+        
+        # Format yyyy-mm-dd
+        elif re.match(r'^\d{4}-\d{2}-\d{2}$', tanggal_str):
+            dt = datetime.strptime(tanggal_str, '%Y-%m-%d')
+            return dt.strftime('%d-%m-%Y')
+        
+        # Format dd-mm-yyyy HH:MM:SS
+        elif re.match(r'^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$', tanggal_str):
+            dt = datetime.strptime(tanggal_str, '%d-%m-%Y %H:%M:%S')
+            return dt.strftime('%d-%m-%Y')
+        
+        # Format dd-mm-yyyy (sudah benar)
+        elif re.match(r'^\d{2}-\d{2}-\d{4}$', tanggal_str):
+            return tanggal_str
+        
+        # Format dd/mm/yyyy
+        elif re.match(r'^\d{2}/\d{2}/\d{4}$', tanggal_str):
+            dt = datetime.strptime(tanggal_str, '%d/%m/%Y')
+            return dt.strftime('%d-%m-%Y')
+        
+        # Format Excel serial number (angka)
+        elif tanggal_str.replace('.', '').isdigit():
             try:
-                # Coba format yyyy-mm-dd
-                return datetime.strptime(str(tanggal_str), '%Y-%m-%d')
-            except ValueError:
-                try:
-                    # Coba format yyyy-mm-dd HH:MM:SS
-                    return datetime.strptime(str(tanggal_str), '%Y-%m-%d %H:%M:%S')
-                except ValueError:
-                    try:
-                        # Coba format dd/mm/yyyy
-                        return datetime.strptime(str(tanggal_str), '%d/%m/%Y')
-                    except ValueError:
-                        print(f"⚠️  Format tanggal tidak dikenali: {tanggal_str}")
-                        return None
+                # Konversi dari Excel serial number
+                excel_date = float(tanggal_str)
+                dt = datetime(1899, 12, 30) + timedelta(days=excel_date)
+                return dt.strftime('%d-%m-%Y')
+            except:
+                return None
+        else:
+            print(f"⚠️  Format tanggal tidak dikenali: {tanggal_str}")
+            return None
+            
+    except Exception as e:
+        print(f"⚠️  Error parsing tanggal '{tanggal_str}': {str(e)}")
+        return None
+
+def format_tanggal_display(tanggal_str):
+    """
+    Format tanggal untuk ditampilkan (selalu dd-mm-yyyy)
+    """
+    formatted = parse_tanggal_tebus(tanggal_str)
+    return formatted if formatted else ""
 
 # ============================
 # FUNGSI URUTKAN DATA BERDASARKAN BULAN DAN TANGGAL
 # ============================
 def urutkan_data_per_nik(group):
     """
-    Mengurutkan data dalam group NIK berdasarkan bulan (Jan-Des) dan tanggal
+    Mengurutkan data dalam group NIK berdasarkan tanggal (dd-mm-yyyy)
     """
     group = group.copy()
-    group['TGL_TEBS_DATETIME'] = group['TGL TEBUS'].apply(parse_tanggal_tebus)
+    
+    # Parse dan format tanggal
+    group['TGL_TEBS_FORMATTED'] = group['TGL TEBUS'].apply(parse_tanggal_tebus)
+    group['TGL_TEBS_DATETIME'] = group['TGL TEBUS'].apply(lambda x: 
+        datetime.strptime(parse_tanggal_tebus(x), '%d-%m-%Y') 
+        if parse_tanggal_tebus(x) else None
+    )
     
     group = group[group['TGL_TEBS_DATETIME'].notna()]
     
@@ -335,31 +374,6 @@ def write_large_dataset_to_sheet(worksheet, dataframe, batch_size=BATCH_SIZE):
         raise
 
 # ============================
-# FUNGSI BACKUP WORKSHEET LAMA
-# ============================
-def backup_existing_sheet(spreadsheet, sheet_name):
-    """
-    Membuat backup dari sheet yang ada sebelum menimpa
-    """
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"{sheet_name}_BACKUP_{timestamp}"
-        
-        # Coba buat worksheet baru sebagai backup
-        try:
-            ws = spreadsheet.worksheet(sheet_name)
-            ws.duplicate(new_sheet_name=backup_name)
-            print(f"📋 Backup dibuat: '{backup_name}'")
-            return backup_name
-        except:
-            print(f"⚠️  Tidak bisa membuat backup untuk '{sheet_name}'")
-            return None
-            
-    except Exception as e:
-        print(f"⚠️  Gagal membuat backup: {str(e)}")
-        return None
-
-# ============================
 # FUNGSI UTAMA YANG DIPERBAIKI
 # ============================
 def main():
@@ -377,6 +391,7 @@ def main():
         print(f"📧 Email penerima: {', '.join(recipient_list[:3])}{'...' if len(recipient_list) > 3 else ''}")
         print(f"⚙️  Batch Size: {BATCH_SIZE:,} baris")
         print(f"⚙️  Max Retries: {MAX_RETRIES}")
+        print(f"📅 Format Tanggal: dd-mm-yyyy")
         print()
 
         # 1. Download semua Excel
@@ -418,6 +433,10 @@ def main():
             # Hapus baris dengan NIK kosong
             df = df[df['NIK'].notna()]
             cleaned_nik_count = len(df)
+
+            # Format tanggal ke dd-mm-yyyy
+            if 'TGL TEBUS' in df.columns:
+                df['TGL TEBUS'] = df['TGL TEBUS'].apply(format_tanggal_display)
 
             total_rows += cleaned_nik_count
             log.append(f"- {filename}: {original_nik_count:,} → {cleaned_nik_count:,} baris")
@@ -510,9 +529,6 @@ def main():
         
         sh = gc.open_by_key(SPREADSHEET_ID)
         
-        # Buat backup sheet lama jika ada
-        backup_name = backup_existing_sheet(sh, SHEET_NAME)
-        
         # Cek atau buat worksheet
         try:
             ws = sh.worksheet(SHEET_NAME)
@@ -549,6 +565,7 @@ REKAP DATA BERHASIL DENGAN OPTIMASI DATA BESAR ✓
 🔧 NIK Dibersihkan: {len(nik_cleaning_log)} entri
 ⚙️  Batch Size: {BATCH_SIZE:,} baris
 🔄 Max Retries: {MAX_RETRIES}
+📅 Format Tanggal: dd-mm-yyyy
 
 📋 DETAIL FILE:
 {chr(10).join(log)}
@@ -563,8 +580,6 @@ REKAP DATA BERHASIL DENGAN OPTIMASI DATA BESAR ✓
 📈 Baris Data: {len(out_df):,}
 📏 Ukuran Worksheet: {ws.row_count:,} baris x {ws.col_count} kolom
 
-{'📋 Backup Sheet: ' + backup_name if backup_name else '⚠️  Tidak ada backup dibuat'}
-
 🔧 OPTIMASI YANG DITERAPKAN:
 1. Batch processing ({BATCH_SIZE:,} baris per batch)
 2. Automatic worksheet resizing
@@ -572,6 +587,7 @@ REKAP DATA BERHASIL DENGAN OPTIMASI DATA BESAR ✓
 4. Rate limit handling
 5. Progress tracking untuk data besar
 6. Memory optimization
+7. Format tanggal konsisten: dd-mm-yyyy
 
 📍 REPOSITORY: verval-pupuk2/scripts/data_tebus_pubers.py
 ⚡ TELAH DIOPTIMASI UNTUK DATA HINGGA 200,000+ BARIS
