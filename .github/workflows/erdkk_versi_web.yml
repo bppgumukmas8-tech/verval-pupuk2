@@ -2,7 +2,7 @@ name: ERDKK versi Web Otomatis
 
 on:
   schedule:
-    # Jam 22:00 UTC = 05:00 WIB (setiap hari)
+    # Jam 22:00 UTC = 05:00 WIB (setiap tanggal 1)
     - cron: "0 22 1 * *"
   workflow_dispatch:  # Manual trigger
   push:
