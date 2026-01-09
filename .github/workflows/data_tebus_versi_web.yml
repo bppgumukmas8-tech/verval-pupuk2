@@ -1,61 +1,64 @@
-name: Process Data Tebus Web Version
+name: Data Tebus Versi Web Otomatis
 
 on:
-  workflow_dispatch:  # Manual trigger
   schedule:
-    # Jadwal setiap hari jam 18:00 UTC (23:00 WIB)
-    - cron: '0 18 * * *'
-  
-  # Optional: trigger saat push ke branch main
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/data_tebus_versi_web.py'
-      - '.github/workflows/process_tebus_data.yml'
+    # Jam 16:30 UTC = 23:30 WIB (setelah script data tebus pubers)
+    - cron: "30 16 * * *"
+  workflow_dispatch:
 
 jobs:
-  process-data:
+  run-data-web:
     runs-on: ubuntu-latest
-    
-    env:
-      PYTHON_VERSION: '3.10'
-      
+
     steps:
-    - name: 🛎️ Checkout repository
-      uses: actions/checkout@v3
-      
-    - name: 🐍 Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: 📦 Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pandas gspread google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client gspread-dataframe gspread-formatting openpyxl
-        
-    - name: 🔐 Setup Google Sheets API credentials
-      run: |
-        echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' > service_account.json
-        echo "✅ Service account credentials saved"
-        
-    - name: 📧 Setup environment variables
-      run: |
-        echo "SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}" >> $GITHUB_ENV
-        echo "SENDER_EMAIL_PASSWORD=${{ secrets.SENDER_EMAIL_PASSWORD }}" >> $GITHUB_ENV
-        echo "RECIPIENT_EMAILS=${{ secrets.RECIPIENT_EMAILS }}" >> $GITHUB_ENV
-        echo "GOOGLE_APPLICATION_CREDENTIALS_JSON='$(cat service_account.json)'" >> $GITHUB_ENV
-        
-    - name: 🚀 Run data processing script
-      run: |
-        python scripts/data_tebus_versi_web.py
-        
-    - name: 📤 Upload logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: error-logs
-        path: |
-          service_account.json
-        retention-days: 1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install gspread==6.0.2
+          pip install pandas==2.1.3
+          pip install gspread-dataframe==3.3.1
+          pip install google-api-python-client==2.108.0
+          pip install google-auth-oauthlib==1.1.0
+          pip install openpyxl==3.1.2
+
+      - name: Create necessary directories
+        run: |
+          mkdir -p scripts/data_web
+          echo "📁 Direktori untuk data web siap"
+
+      - name: Run data web cleaning script
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_EMAIL_PASSWORD: ${{ secrets.SENDER_EMAIL_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+        run: |
+          echo "🔍 Memverifikasi secrets..."
+          echo "📧 Email pengirim: $SENDER_EMAIL"
+          
+          echo "🚀 Menjalankan script cleaning data versi web..."
+          python scripts/data_tebus_versi_web.py
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          echo "🧹 Membersihkan file temporary..."
+          rm -rf scripts/data_web/*.xlsx
+          echo "✅ Pembersihan selesai"
+          
+      - name: Upload error logs jika gagal
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-web-error-logs
+          path: |
+            scripts/data_web/
+          retention-days: 3
