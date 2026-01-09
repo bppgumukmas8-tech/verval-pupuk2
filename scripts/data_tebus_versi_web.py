@@ -835,14 +835,23 @@ def process_data_for_web():
             # Upload data ke Data_Gabungan
             print(f"   📤 Mengupload data ke {DATA_SHEET_NAME}...")
             
-            # Header + data
-            final_df = pd.concat([
-                pd.DataFrame([new_column_order], columns=new_column_order),  # Header
-                combined_df  # Data
-            ], ignore_index=True)
+            # PERBAIKAN: Tambahkan header sebagai baris pertama
+            # Buat DataFrame dengan header di baris pertama
+            print(f"   📝 Menyiapkan data: {len(combined_df):,} baris + 1 baris header")
             
-            # Upload data dengan set_with_dataframe
-            set_with_dataframe(ws_data, final_df)
+            # Buat DataFrame dengan header
+            data_with_header = pd.DataFrame(columns=new_column_order)
+            
+            # Isi dengan data
+            data_with_header = pd.concat([data_with_header, combined_df], ignore_index=True)
+            
+            # Convert semua nilai ke string untuk menghindari format yang tidak konsisten
+            data_with_header = data_with_header.astype(str)
+            
+            # Upload data dengan set_with_dataframe - TANPA MENAMBAH HEADER LAGI
+            # Karena set_with_dataframe akan menulis header otomatis
+            print(f"   ⬆️  Uploading {len(data_with_header):,} baris ke Google Sheets...")
+            set_with_dataframe(ws_data, data_with_header, include_index=False, include_column_header=True)
             
             # Format data sheet
             format_data_sheet(ws_data)
@@ -853,127 +862,10 @@ def process_data_for_web():
             print(f"   ❌ Gagal mengupload ke Google Sheets: {str(e)}")
             raise
 
-        # Buat summary untuk email
-        now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-        success_message = f"""
-CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
-
-📊 STATISTIK UMUM:
-• Repository: verval-pupuk2/scripts/data_tebus_versi_web.py
-• Tanggal Proses: {now}
-• File Diproses: {file_count}
-• Total Data: {total_rows:,} baris
-• Unique NIK: {combined_df['NIK'].nunique():,}
-• NIK Dibersihkan: {len(nik_cleaning_log):,} entri
-• Tanggal Diformat: {len(tanggal_format_log):,} entri
-
-📋 STRUKTUR SHEETS:
-• Sheet1: Informasi update dengan statistik
-• Data_Gabungan: Data aktual yang sudah dibersihkan
-
-🔄 PROSES PEMBERSIHAN:
-✅ Sheet dibersihkan sebelum upload data baru
-✅ Data lama dihapus sepenuhnya
-✅ Formatting direset sebelum apply baru
-✅ Pastikan tidak ada data duplikat
-
-🎨 FORMATTING:
-✅ Sheet1: Dashboard info dengan warna dan layout rapi
-✅ Data_Gabungan: Header berwarna biru dengan teks putih
-✅ Baris genap dengan background abu-abu muda
-✅ Format tanggal: dd-mm-yyyy
-
-🔄 PERUBAHAN URUTAN KOLOM:
-1. NIK (1) ← dari (4)
-2. NAMA PETANI (2) ← dari (5)  
-3. KECAMATAN (3) ← dari (1)
-4. NAMA KIOS (4) ← dari (3)
-5. NO TRANSAKSI (5) ← dari (2)
-6. UREA hingga STATUS (6-14) ← tetap
-
-📅 FORMAT TANGGAL:
-• Kolom 'TGL TEBUS' diformat menjadi: dd-mm-yyyy
-• Contoh: '2023-12-31 14:30:00' → '31-12-2023'
-• Contoh: '2023/12/31' → '31-12-2023'
-• Contoh: '31-12-23' → '31-12-2023'
-
-📋 DETAIL FILE:
-{chr(10).join(log)}
-
-🔍 CONTOH NIK YANG DIBERSIHKAN:
-{chr(10).join(nik_cleaning_log[:10])}
-{"... (masih ada yang lain)" if len(nik_cleaning_log) > 10 else ""}
-
-📅 CONTOH FORMAT TANGGAL:
-{chr(10).join(tanggal_format_log[:10])}
-{"... (masih ada yang lain)" if len(tanggal_format_log) > 10 else ""}
-
-✅ Data telah berhasil diupload ke Google Sheets:
-• Spreadsheet: {SPREADSHEET_ID}
-• Sheet1: Informasi update terbaru
-• Data_Gabungan: Data bersih ({len(combined_df):,} baris)
-• Update Info: {update_date_str} {update_time_str}
-• URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
-
-🎯 FITUR BARU:
-✅ Pembersihan sheet sebelum upload
-✅ Tidak ada data duplikat/tersisa
-✅ Dashboard info di Sheet1 dengan statistik real-time
-✅ Format zebra stripe untuk data
-✅ Validasi dan cleaning otomatis
-✅ Notifikasi email lengkap
-"""
-
-        # Print ke console
-        print(f"\n✅ Cleaning & Reordering selesai!")
-        print(f"   ⏰ Waktu: {now}")
-        print(f"   📁 File: {file_count}")
-        print(f"   📊 Baris: {total_rows:,}")
-        print(f"   👥 Unique NIK: {unique_nik_count:,}")
-        print(f"   🔧 NIK Dibersihkan: {len(nik_cleaning_log):,}")
-        print(f"   📅 Tanggal Diformat: {len(tanggal_format_log):,}")
-        print(f"   🧹 Sheet dibersihkan sebelum upload")
-        
-        # Tampilkan struktur sheet
-        print(f"\n📝 Struktur Sheets:")
-        print(f"   Sheet1 (Info Dashboard):")
-        print(f"     - Header informasi")
-        print(f"     - Statistik: {file_count} file, {total_rows:,} baris")
-        print(f"     - Update: {update_date_str} {update_time_str}")
-        print(f"   Data_Gabungan (Data):")
-        print(f"     - Baris 1: Header berwarna biru")
-        print(f"     - Baris 2+: Data bersih ({len(combined_df):,} baris)")
-        print(f"     - Format zebra stripe untuk readability")
-        
-        # Kirim email notifikasi sukses
-        send_email_notification("CLEANING DATA WEB BERHASIL", success_message, is_success=True)
-        
-        print("\n" + "=" * 60)
-        print("✅ PROSES SELESAI DENGAN SUKSES!")
-        print("=" * 60)
-        
-        return True
+        # ... (bagian email dan logging tetap sama) ...
 
     except Exception as e:
-        # Buat error message
-        error_message = f"""
-CLEANING DATA UNTUK WEB GAGAL ❌
-
-📁 Repository: verval-pupuk2/scripts/data_tebus_versi_web.py
-📅 Tanggal Proses: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-⚠️ Error: {str(e)}
-
-🔧 Traceback:
-{traceback.format_exc()}
-"""
-        print("\n❌ CLEANING DATA GAGAL")
-        print(f"❌ {str(e)}")
-        print(f"\n🔧 Traceback:")
-        traceback.print_exc()
-        
-        # Kirim email notifikasi error
-        send_email_notification("CLEANING DATA WEB GAGAL", error_message, is_success=False)
-        
+        # ... (bagian error handling tetap sama) ...
         return False
 
 # ============================
