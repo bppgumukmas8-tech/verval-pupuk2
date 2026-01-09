@@ -240,60 +240,54 @@ def download_excel_files(folder_id, save_folder="data_web"):
 # ============================
 # FUNGSI BERSIHKAN SHEET
 # ============================
-def clear_sheet_contents(worksheet, start_row=1, start_col=1):
+def clear_sheet_contents(worksheet):
     """
-    Membersihkan semua isi sheet dari baris dan kolom tertentu
+    Membersihkan semua isi sheet sepenuhnya
     """
     try:
-        # Dapatkan semua nilai yang ada di sheet
-        all_values = worksheet.get_all_values()
+        print(f"   🧹 Membersihkan sheet '{worksheet.title}'...")
         
-        if not all_values:
-            print(f"   📭 Sheet sudah kosong")
-            return True
+        # Method 1: Coba gunakan clear() untuk membersihkan semua
+        worksheet.clear()
+        print(f"   ✅ Sheet berhasil dibersihkan dengan clear()")
         
-        # Hitung jumlah baris dan kolom yang terisi
-        num_rows = len(all_values)
-        num_cols = max(len(row) for row in all_values) if all_values else 1
-        
-        print(f"   🧹 Membersihkan sheet: {num_rows} baris × {num_cols} kolom")
-        
-        # Buat list kosong dengan dimensi yang sama
-        empty_data = [['' for _ in range(num_cols)] for _ in range(num_rows)]
-        
-        # Update sheet dengan data kosong
-        worksheet.update(f'A{start_row}', empty_data)
-        
-        # Clear formatting juga (optional)
+        # Method 2: Untuk memastikan, tambahkan batch clear
         try:
-            # Clear format untuk seluruh range
-            worksheet.batch_clear([
-                {
-                    "range": {
-                        "sheetId": worksheet.id,
-                        "startRowIndex": start_row-1,
-                        "endRowIndex": start_row-1 + num_rows,
-                        "startColumnIndex": start_col-1,
-                        "endColumnIndex": start_col-1 + num_cols
-                    }
-                }
-            ])
-        except:
-            # Jika batch_clear tidak tersedia, gunakan clear saja
-            worksheet.clear()
+            # Dapatkan dimensi sheet
+            row_count = worksheet.row_count
+            col_count = worksheet.col_count
+            
+            if row_count > 0 and col_count > 0:
+                # Buat data kosong dengan ukuran yang sama
+                empty_data = [['' for _ in range(col_count)] for _ in range(row_count)]
+                worksheet.update('A1', empty_data)
+                print(f"   ✅ Sheet dikosongkan dengan update data kosong")
+        except Exception as e2:
+            print(f"   ⚠️  Batch clear tidak diperlukan: {str(e2)}")
         
-        print(f"   ✅ Sheet berhasil dibersihkan")
         return True
         
     except Exception as e:
-        print(f"   ⚠️  Gagal membersihkan sheet: {str(e)}")
+        print(f"   ❌ Gagal membersihkan sheet: {str(e)}")
         # Coba metode alternatif
         try:
-            worksheet.clear()
-            print(f"   ✅ Sheet berhasil dibersihkan (metode alternatif)")
-            return True
+            # Reset sheet dengan menghapus dan membuat baru
+            spreadsheet = worksheet.spreadsheet
+            sheet_id = worksheet.id
+            
+            # Hapus sheet
+            spreadsheet.del_worksheet(worksheet)
+            
+            # Buat sheet baru dengan nama yang sama
+            new_worksheet = spreadsheet.add_worksheet(
+                title=worksheet.title, 
+                rows=1000, 
+                cols=worksheet.col_count
+            )
+            print(f"   ✅ Sheet direset dengan menghapus dan membuat baru")
+            return new_worksheet
         except Exception as e2:
-            print(f"   ❌ Gagal membersihkan sheet: {str(e2)}")
+            print(f"   ❌ Gagal reset sheet: {str(e2)}")
             return False
 
 # ============================
