@@ -22,7 +22,6 @@ from datetime import datetime
 import traceback
 import json
 import io
-from gspread_formatting import *
 
 # ============================
 # KONFIGURASI
@@ -238,86 +237,122 @@ def download_excel_files(folder_id, save_folder="data_web"):
     return paths
 
 # ============================
-# FUNGSI FORMAT HEADER GOOGLE SHEETS
+# FUNGSI FORMAT GOOGLE SHEETS (SIMPLE)
 # ============================
-def apply_header_formatting(ws, last_update_date, last_update_time):
+def format_google_sheet(ws, update_date, update_time):
     """
-    Menerapkan formatting pada header Google Sheets
+    Format Google Sheets dengan cara sederhana tanpa gspread-formatting
     """
     try:
-        # Format untuk header data (baris ke-4 dan seterusnya)
-        header_format = CellFormat(
-            backgroundColor=Color(0.2, 0.6, 0.9),  # Biru muda
-            textFormat=TextFormat(
-                bold=True,
-                foregroundColor=Color(1, 1, 1),  # Putih
-                fontSize=11
-            ),
-            horizontalAlignment='CENTER',
-            verticalAlignment='MIDDLE',
-            borders=Borders(
-                top=Border(style='SOLID', color=Color(0, 0, 0)),
-                bottom=Border(style='SOLID', color=Color(0, 0, 0)),
-                left=Border(style='SOLID', color=Color(0, 0, 0)),
-                right=Border(style='SOLID', color=Color(0, 0, 0))
-            ),
-            padding=Padding(top=10, bottom=10, left=5, right=5)
-        )
+        # Update info baris 1-3
+        ws.update('A1', [['Data update per tanggal input :']])
+        ws.update('A2', [[update_date]])
+        ws.update('A3', [[f'Jam update: {update_time}']])
         
-        # Format untuk update info (baris 1-3)
-        info_format = CellFormat(
-            backgroundColor=Color(0.95, 0.95, 0.95),  # Abu-abu muda
-            textFormat=TextFormat(
-                bold=False,
-                fontSize=10
-            )
-        )
+        # Format header (baris 4) dengan gspread native formatting
+        header_range = f'A4:N4'
         
-        # Format untuk tanggal update (A2)
-        date_format = CellFormat(
-            backgroundColor=Color(1, 0.9, 0.8),  # Oranye muda
-            textFormat=TextFormat(
-                bold=True,
-                fontSize=12,
-                foregroundColor=Color(0.8, 0.4, 0)  # Oranye tua
-            ),
-            horizontalAlignment='LEFT'
-        )
+        # Format untuk header
+        ws.format(header_range, {
+            "backgroundColor": {
+                "red": 0.2,
+                "green": 0.6, 
+                "blue": 0.9
+            },
+            "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE",
+            "textFormat": {
+                "foregroundColor": {
+                    "red": 1.0,
+                    "green": 1.0,
+                    "blue": 1.0
+                },
+                "fontSize": 11,
+                "bold": True
+            },
+            "borders": {
+                "top": {"style": "SOLID"},
+                "bottom": {"style": "SOLID"},
+                "left": {"style": "SOLID"},
+                "right": {"style": "SOLID"}
+            }
+        })
         
-        # Format untuk jam update (A3)
-        time_format = CellFormat(
-            backgroundColor=Color(0.9, 0.95, 1),  # Biru sangat muda
-            textFormat=TextFormat(
-                italic=True,
-                fontSize=11,
-                foregroundColor=Color(0.3, 0.3, 0.3)  # Abu-abu gelap
-            ),
-            horizontalAlignment='LEFT'
-        )
+        # Format untuk info update (baris 1-3)
+        ws.format('A1:N3', {
+            "backgroundColor": {
+                "red": 0.95,
+                "green": 0.95,
+                "blue": 0.95
+            },
+            "textFormat": {
+                "fontSize": 10
+            }
+        })
         
-        # Format border untuk update info
-        border_format = CellFormat(
-            borders=Borders(
-                bottom=Border(style='SOLID_THICK', color=Color(0.2, 0.6, 0.9))
-            )
-        )
+        # Format khusus untuk tanggal (A2)
+        ws.format('A2', {
+            "backgroundColor": {
+                "red": 1.0,
+                "green": 0.9,
+                "blue": 0.8
+            },
+            "textFormat": {
+                "fontSize": 12,
+                "bold": True,
+                "foregroundColor": {
+                    "red": 0.8,
+                    "green": 0.4,
+                    "blue": 0.0
+                }
+            }
+        })
         
-        # Menerapkan format
-        # Header data (baris 4)
-        format_cell_range(ws, 'A4:N4', header_format)
+        # Format khusus untuk jam (A3)
+        ws.format('A3', {
+            "backgroundColor": {
+                "red": 0.9,
+                "green": 0.95,
+                "blue": 1.0
+            },
+            "textFormat": {
+                "fontSize": 11,
+                "italic": True,
+                "foregroundColor": {
+                    "red": 0.3,
+                    "green": 0.3,
+                    "blue": 0.3
+                }
+            }
+        })
         
-        # Update info
-        format_cell_range(ws, 'A1:N3', info_format)
-        format_cell_range(ws, 'A2', date_format)
-        format_cell_range(ws, 'A3', time_format)
+        # Border pemisah di baris 3
+        ws.format('A3:N3', {
+            "borders": {
+                "bottom": {
+                    "style": "SOLID_THICK",
+                    "color": {
+                        "red": 0.2,
+                        "green": 0.6,
+                        "blue": 0.9
+                    }
+                }
+            }
+        })
         
-        # Border pemisah
-        format_cell_range(ws, 'A3:N3', border_format)
+        # Auto-resize kolom
+        try:
+            ws.columns_auto_resize(0, 13)  # Resize kolom A sampai N
+        except:
+            print("⚠️  Auto-resize tidak tersedia, lewati...")
         
-        print("✅ Formatting header berhasil diterapkan")
+        print("✅ Formatting berhasil diterapkan")
+        return True
         
     except Exception as e:
         print(f"⚠️  Gagal menerapkan formatting: {str(e)}")
+        # Tetap lanjut meski formatting gagal
+        return False
 
 # ============================
 # FUNGSI UTAMA
@@ -329,7 +364,7 @@ def process_data_for_web():
     print("=" * 60)
     print("🚀 PROSES CLEANING & REORDERING DATA UNTUK WEB")
     print("=" * 60)
-    print(f"📁 Repository: verval-pupuk2/scripts/data_tebus_versi_web.py")
+    print(f"📁 Script: data_tebus_versi_web.py")
     print(f"📂 Folder ID: {FOLDER_ID}")
     print(f"📊 Spreadsheet ID: {SPREADSHEET_ID}")
     print(f"📄 Sheet Name: {SHEET_NAME}")
@@ -342,7 +377,6 @@ def process_data_for_web():
         file_count = 0
         nik_cleaning_log = []
         tanggal_format_log = []
-        latest_file_date = None
 
         print("🔍 Memulai proses cleaning dan reordering data...")
         
@@ -467,10 +501,16 @@ def process_data_for_web():
         # Apply reordering
         combined_df = combined[new_column_order]
 
+        # Waktu update
+        update_time = datetime.now()
+        update_date_str = update_time.strftime("%d-%m-%Y")
+        update_time_str = update_time.strftime("%H:%M:%S")
+
         # Tulis ke Google Sheet
         print(f"\n📤 Mengupload data ke Google Sheets...")
         print(f"   Spreadsheet: {SPREADSHEET_ID}")
         print(f"   Sheet: {SHEET_NAME}")
+        print(f"   Update: {update_date_str} {update_time_str}")
         
         try:
             sh = gc.open_by_key(SPREADSHEET_ID)
@@ -485,52 +525,24 @@ def process_data_for_web():
                 print(f"   📄 Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
                 ws = sh.add_worksheet(SHEET_NAME, rows=1000, cols=len(new_column_order))
             
-            # Waktu update
-            update_time = datetime.now()
-            update_date_str = update_time.strftime("%d-%m-%Y")
-            update_time_str = update_time.strftime("%H:%M:%S")
+            # Buat DataFrame dengan 3 baris kosong di atas untuk info update
+            empty_rows = pd.DataFrame([[''] * len(new_column_order)] * 3, 
+                                    columns=new_column_order)
             
-            # Buat DataFrame dengan informasi update
-            info_df = pd.DataFrame({
-                'Info': [
-                    'Data update per tanggal input :',
-                    update_date_str,
-                    f'Jam update: {update_time_str}'
-                ]
-            })
-            
-            # Buat DataFrame kosong untuk pemisah
-            separator_df = pd.DataFrame([[''] * len(new_column_order)], 
-                                      columns=new_column_order)
-            
-            # Gabungkan semua: info + separator + header + data
+            # Gabungkan: 3 baris kosong + header + data
             final_df = pd.concat([
-                info_df.assign(**{col: '' for col in new_column_order}),  # Info update
-                separator_df,                                              # Pemisah
+                empty_rows,
                 pd.DataFrame([new_column_order], columns=new_column_order),  # Header
-                combined_df                                                # Data
+                combined_df  # Data
             ], ignore_index=True)
             
-            # Upload data
+            # Upload data terlebih dahulu
             set_with_dataframe(ws, final_df)
             
-            # Apply formatting
-            apply_header_formatting(ws, update_date_str, update_time_str)
-            
-            # Set lebar kolom
-            try:
-                # Set width untuk kolom A (info)
-                ws.update("A1", [["Data update per tanggal input :"]])
-                ws.update("A2", [[update_date_str]])
-                ws.update("A3", [[f"Jam update: {update_time_str}"]])
-                
-                # Set kolom width
-                ws.columns_auto_resize(0, len(new_column_order) - 1)
-            except Exception as e:
-                print(f"⚠️  Gagal mengatur width kolom: {str(e)}")
+            # Kemudian tambahkan info update dan formatting
+            format_google_sheet(ws, update_date_str, update_time_str)
             
             print(f"   ✅ Data berhasil diupload: {len(combined_df):,} baris × {len(combined_df.columns)} kolom")
-            print(f"   📅 Update info: {update_date_str} {update_time_str}")
             
         except Exception as e:
             print(f"   ❌ Gagal mengupload ke Google Sheets: {str(e)}")
@@ -555,7 +567,6 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 ✅ Info update tanggal di baris 1-3
 ✅ Pemisah garis biru tebal
 ✅ Format tanggal: dd-mm-yyyy
-✅ Auto-resize kolom
 
 🔄 PERUBAHAN URUTAN KOLOM:
 1. NIK (1) ← dari (4)
@@ -608,19 +619,14 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
         print(f"   👥 Unique NIK: {combined_df['NIK'].nunique():,}")
         print(f"   🔧 NIK Dibersihkan: {len(nik_cleaning_log):,}")
         print(f"   📅 Tanggal Diformat: {len(tanggal_format_log):,}")
-        print(f"   🎨 Formatting: Header biru, info update")
         
-        # Tampilkan contoh data
-        print(f"\n📋 Contoh 5 baris pertama (TGL TEBUS sudah diformat):")
-        for i, row in combined_df.head().iterrows():
-            print(f"   {i+1}. NIK: {row['NIK']}, NAMA: {row['NAMA PETANI']}, TGL: {row['TGL TEBUS']}")
-        
+        # Tampilkan struktur sheet
         print(f"\n📝 Struktur Sheet:")
-        print(f"   A1: Data update per tanggal input :")
-        print(f"   A2: {update_date_str}")
-        print(f"   A3: Jam update: {update_time_str}")
-        print(f"   A4-N4: Header berwarna biru")
-        print(f"   A5+: Data aktual")
+        print(f"   Baris 1: 'Data update per tanggal input :'")
+        print(f"   Baris 2: '{update_date_str}'")
+        print(f"   Baris 3: 'Jam update: {update_time_str}'")
+        print(f"   Baris 4: Header berwarna biru")
+        print(f"   Baris 5+: Data aktual ({len(combined_df):,} baris)")
         
         # Kirim email notifikasi sukses
         send_email_notification("CLEANING DATA WEB BERHASIL", success_message, is_success=True)
@@ -645,6 +651,8 @@ CLEANING DATA UNTUK WEB GAGAL ❌
 """
         print("\n❌ CLEANING DATA GAGAL")
         print(f"❌ {str(e)}")
+        print(f"\n🔧 Traceback:")
+        traceback.print_exc()
         
         # Kirim email notifikasi error
         send_email_notification("CLEANING DATA WEB GAGAL", error_message, is_success=False)
