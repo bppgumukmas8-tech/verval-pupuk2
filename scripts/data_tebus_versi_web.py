@@ -30,7 +30,8 @@ FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"  # Folder Google Drive
 
 # GUNAKAN SPREADSHEET YANG SAMA DENGAN WORKFLOW LAIN
 SPREADSHEET_ID = "1kh9OBcSKrh_cDy6u071vQP1kkEXNdpM4ERP9rd0tjqw"
-SHEET_NAME = "Data_Gabungan"  # Nama sheet untuk hasil
+DATA_SHEET_NAME = "Data_Gabungan"  # Nama sheet untuk data
+INFO_SHEET_NAME = "Sheet1"  # Nama sheet untuk info update
 
 # ============================
 # LOAD EMAIL CONFIGURATION FROM SECRETS
@@ -237,23 +238,207 @@ def download_excel_files(folder_id, save_folder="data_web"):
     return paths
 
 # ============================
-# FUNGSI FORMAT GOOGLE SHEETS (SIMPLE)
+# FUNGSI UPDATE INFO DI SHEET1
 # ============================
-def format_google_sheet(ws, update_date, update_time):
+def update_info_sheet(ws_info, update_date, update_time):
     """
-    Format Google Sheets dengan cara sederhana tanpa gspread-formatting
+    Update informasi update di Sheet1
     """
     try:
-        # Update info baris 1-3
-        ws.update('A1', [['Data update per tanggal input :']])
-        ws.update('A2', [[update_date]])
-        ws.update('A3', [[f'Jam update: {update_time}']])
+        # Clear sheet terlebih dahulu (opsional)
+        try:
+            ws_info.clear()
+        except:
+            pass
         
-        # Format header (baris 4) dengan gspread native formatting
-        header_range = f'A4:N4'
+        # Data untuk Sheet1
+        info_data = [
+            ["DATA UPDATE - VERVAL PUPUK WEB VERSION"],
+            ["=" * 40],
+            [""],
+            ["Data update per tanggal input :"],
+            [update_date],
+            [f"Jam update: {update_time}"],
+            [""],
+            ["=" * 40],
+            [""],
+            ["STATISTIK DATA:"],
+            ["• Data diambil dari folder Google Drive"],
+            ["• Proses cleaning NIK otomatis"],
+            ["• Format tanggal: dd-mm-yyyy"],
+            ["• Reordering kolom untuk web"],
+            [""],
+            ["INFORMASI:"],
+            ["• Spreadsheet ini otomatis diupdate"],
+            ["• Update harian pukul 15:00 WIB"],
+            ["• Notifikasi via email otomatis"],
+            [""],
+            ["KONTAK:"],
+            ["• Untuk pertanyaan hubungi admin"],
+            [""],
+            [f"Terakhir diupdate: {update_date} {update_time}"]
+        ]
+        
+        # Update data ke Sheet1
+        for i, row in enumerate(info_data, start=1):
+            ws_info.update(f'A{i}', [row])
+        
+        # Formatting untuk Sheet1
+        # Header utama
+        ws_info.format('A1', {
+            "backgroundColor": {
+                "red": 0.2,
+                "green": 0.6, 
+                "blue": 0.9
+            },
+            "horizontalAlignment": "CENTER",
+            "textFormat": {
+                "foregroundColor": {
+                    "red": 1.0,
+                    "green": 1.0,
+                    "blue": 1.0
+                },
+                "fontSize": 14,
+                "bold": True
+            },
+            "borders": {
+                "top": {"style": "SOLID"},
+                "bottom": {"style": "SOLID"},
+                "left": {"style": "SOLID"},
+                "right": {"style": "SOLID"}
+            }
+        })
+        
+        # Info tanggal update
+        ws_info.format('A4:A6', {
+            "backgroundColor": {
+                "red": 0.95,
+                "green": 0.95,
+                "blue": 0.95
+            },
+            "textFormat": {
+                "fontSize": 11,
+                "bold": True
+            }
+        })
+        
+        # Tanggal spesifik
+        ws_info.format('A5', {
+            "backgroundColor": {
+                "red": 1.0,
+                "green": 0.9,
+                "blue": 0.8
+            },
+            "textFormat": {
+                "fontSize": 12,
+                "bold": True,
+                "foregroundColor": {
+                    "red": 0.8,
+                    "green": 0.4,
+                    "blue": 0.0
+                }
+            }
+        })
+        
+        # Jam update
+        ws_info.format('A6', {
+            "backgroundColor": {
+                "red": 0.9,
+                "green": 0.95,
+                "blue": 1.0
+            },
+            "textFormat": {
+                "fontSize": 11,
+                "italic": True,
+                "foregroundColor": {
+                    "red": 0.3,
+                    "green": 0.3,
+                    "blue": 0.3
+                }
+            }
+        })
+        
+        # Judul statistik
+        ws_info.format('A10', {
+            "backgroundColor": {
+                "red": 0.8,
+                "green": 0.9,
+                "blue": 0.8
+            },
+            "textFormat": {
+                "fontSize": 12,
+                "bold": True
+            }
+        })
+        
+        # Judul informasi
+        ws_info.format('A16', {
+            "backgroundColor": {
+                "red": 0.9,
+                "green": 0.9,
+                "blue": 0.8
+            },
+            "textFormat": {
+                "fontSize": 12,
+                "bold": True
+            }
+        })
+        
+        # Judul kontak
+        ws_info.format('A22', {
+            "backgroundColor": {
+                "red": 0.9,
+                "green": 0.8,
+                "blue": 0.9
+            },
+            "textFormat": {
+                "fontSize": 12,
+                "bold": True
+            }
+        })
+        
+        # Footer
+        ws_info.format('A24', {
+            "backgroundColor": {
+                "red": 0.98,
+                "green": 0.98,
+                "blue": 0.98
+            },
+            "textFormat": {
+                "fontSize": 10,
+                "italic": True
+            },
+            "borders": {
+                "top": {"style": "SOLID_THICK", "color": {"red": 0.2, "green": 0.6, "blue": 0.9}}
+            }
+        })
+        
+        # Auto-resize kolom A
+        try:
+            ws_info.columns_auto_resize(0, 0)  # Hanya resize kolom A
+        except:
+            print("⚠️  Auto-resize tidak tersedia, lewati...")
+        
+        print("✅ Info update berhasil ditulis di Sheet1")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️  Gagal update Sheet1: {str(e)}")
+        return False
+
+# ============================
+# FUNGSI FORMAT DATA SHEET
+# ============================
+def format_data_sheet(ws_data):
+    """
+    Format sheet Data_Gabungan (hanya header)
+    """
+    try:
+        # Format header (baris 1)
+        header_range = f'A1:N1'
         
         # Format untuk header
-        ws.format(header_range, {
+        ws_data.format(header_range, {
             "backgroundColor": {
                 "red": 0.2,
                 "green": 0.6, 
@@ -278,80 +463,17 @@ def format_google_sheet(ws, update_date, update_time):
             }
         })
         
-        # Format untuk info update (baris 1-3)
-        ws.format('A1:N3', {
-            "backgroundColor": {
-                "red": 0.95,
-                "green": 0.95,
-                "blue": 0.95
-            },
-            "textFormat": {
-                "fontSize": 10
-            }
-        })
-        
-        # Format khusus untuk tanggal (A2)
-        ws.format('A2', {
-            "backgroundColor": {
-                "red": 1.0,
-                "green": 0.9,
-                "blue": 0.8
-            },
-            "textFormat": {
-                "fontSize": 12,
-                "bold": True,
-                "foregroundColor": {
-                    "red": 0.8,
-                    "green": 0.4,
-                    "blue": 0.0
-                }
-            }
-        })
-        
-        # Format khusus untuk jam (A3)
-        ws.format('A3', {
-            "backgroundColor": {
-                "red": 0.9,
-                "green": 0.95,
-                "blue": 1.0
-            },
-            "textFormat": {
-                "fontSize": 11,
-                "italic": True,
-                "foregroundColor": {
-                    "red": 0.3,
-                    "green": 0.3,
-                    "blue": 0.3
-                }
-            }
-        })
-        
-        # Border pemisah di baris 3
-        ws.format('A3:N3', {
-            "borders": {
-                "bottom": {
-                    "style": "SOLID_THICK",
-                    "color": {
-                        "red": 0.2,
-                        "green": 0.6,
-                        "blue": 0.9
-                    }
-                }
-            }
-        })
-        
-        # Auto-resize kolom
+        # Auto-resize semua kolom
         try:
-            ws.columns_auto_resize(0, 13)  # Resize kolom A sampai N
+            ws_data.columns_auto_resize(0, 13)  # Resize kolom A sampai N
         except:
             print("⚠️  Auto-resize tidak tersedia, lewati...")
         
-        print("✅ Formatting berhasil diterapkan")
+        print("✅ Formatting Data_Gabungan berhasil")
         return True
         
     except Exception as e:
-        print(f"⚠️  Gagal menerapkan formatting: {str(e)}")
-        # Tetap lanjut meski formatting gagal
+        print(f"⚠️  Gagal formatting Data_Gabungan: {str(e)}")
         return False
 
 # ============================
@@ -367,7 +489,8 @@ def process_data_for_web():
     print(f"📁 Script: data_tebus_versi_web.py")
     print(f"📂 Folder ID: {FOLDER_ID}")
     print(f"📊 Spreadsheet ID: {SPREADSHEET_ID}")
-    print(f"📄 Sheet Name: {SHEET_NAME}")
+    print(f"📄 Sheet Data: {DATA_SHEET_NAME}")
+    print(f"📄 Sheet Info: {INFO_SHEET_NAME}")
     print("=" * 60)
     
     try:
@@ -509,38 +632,48 @@ def process_data_for_web():
         # Tulis ke Google Sheet
         print(f"\n📤 Mengupload data ke Google Sheets...")
         print(f"   Spreadsheet: {SPREADSHEET_ID}")
-        print(f"   Sheet: {SHEET_NAME}")
+        print(f"   Sheet Data: {DATA_SHEET_NAME}")
+        print(f"   Sheet Info: {INFO_SHEET_NAME}")
         print(f"   Update: {update_date_str} {update_time_str}")
         
         try:
             sh = gc.open_by_key(SPREADSHEET_ID)
             
-            # Cek apakah sheet sudah ada
+            # ========== PROSES SHEET1 (INFO) ==========
+            print(f"\n📝 Memproses {INFO_SHEET_NAME} untuk info update...")
             try:
-                ws = sh.worksheet(SHEET_NAME)
-                print(f"   ✅ Sheet '{SHEET_NAME}' ditemukan, membersihkan...")
-                ws.clear()
+                ws_info = sh.worksheet(INFO_SHEET_NAME)
+                print(f"   ✅ Sheet '{INFO_SHEET_NAME}' ditemukan")
             except gspread.exceptions.WorksheetNotFound:
                 # Buat sheet baru jika tidak ada
-                print(f"   📄 Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
-                ws = sh.add_worksheet(SHEET_NAME, rows=1000, cols=len(new_column_order))
+                print(f"   📄 Sheet '{INFO_SHEET_NAME}' tidak ditemukan, membuat baru...")
+                ws_info = sh.add_worksheet(INFO_SHEET_NAME, rows=50, cols=5)
             
-            # Buat DataFrame dengan 3 baris kosong di atas untuk info update
-            empty_rows = pd.DataFrame([[''] * len(new_column_order)] * 3, 
-                                    columns=new_column_order)
+            # Update info di Sheet1
+            update_info_sheet(ws_info, update_date_str, update_time_str)
             
-            # Gabungkan: 3 baris kosong + header + data
+            # ========== PROSES DATA_GABUNGAN ==========
+            print(f"\n📊 Memproses {DATA_SHEET_NAME} untuk data...")
+            try:
+                ws_data = sh.worksheet(DATA_SHEET_NAME)
+                print(f"   ✅ Sheet '{DATA_SHEET_NAME}' ditemukan, membersihkan...")
+                ws_data.clear()
+            except gspread.exceptions.WorksheetNotFound:
+                # Buat sheet baru jika tidak ada
+                print(f"   📄 Sheet '{DATA_SHEET_NAME}' tidak ditemukan, membuat baru...")
+                ws_data = sh.add_worksheet(DATA_SHEET_NAME, rows=1000, cols=len(new_column_order))
+            
+            # Upload data ke Data_Gabungan
+            # Header + data
             final_df = pd.concat([
-                empty_rows,
                 pd.DataFrame([new_column_order], columns=new_column_order),  # Header
                 combined_df  # Data
             ], ignore_index=True)
             
-            # Upload data terlebih dahulu
-            set_with_dataframe(ws, final_df)
+            set_with_dataframe(ws_data, final_df)
             
-            # Kemudian tambahkan info update dan formatting
-            format_google_sheet(ws, update_date_str, update_time_str)
+            # Format data sheet
+            format_data_sheet(ws_data)
             
             print(f"   ✅ Data berhasil diupload: {len(combined_df):,} baris × {len(combined_df.columns)} kolom")
             
@@ -562,10 +695,13 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 • NIK Dibersihkan: {len(nik_cleaning_log):,} entri
 • Tanggal Diformat: {len(tanggal_format_log):,} entri
 
-🎨 FORMATTING GOOGLE SHEETS:
-✅ Header berwarna biru dengan teks putih
-✅ Info update tanggal di baris 1-3
-✅ Pemisah garis biru tebal
+📋 STRUKTUR SHEETS:
+• Sheet1: Informasi update ({update_date_str} {update_time_str})
+• Data_Gabungan: Data aktual ({len(combined_df):,} baris)
+
+🎨 FORMATTING:
+✅ Sheet1: Info update dengan warna dan layout rapi
+✅ Data_Gabungan: Header berwarna biru dengan teks putih
 ✅ Format tanggal: dd-mm-yyyy
 
 🔄 PERUBAHAN URUTAN KOLOM:
@@ -595,15 +731,16 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 
 ✅ Data telah berhasil diupload ke Google Sheets:
 • Spreadsheet: {SPREADSHEET_ID}
-• Sheet: {SHEET_NAME}
+• Sheet1: Informasi update
+• Data_Gabungan: Data aktual
 • Update Info: {update_date_str} {update_time_str}
-• URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={ws.id}
+• URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
 
 🎯 FITUR:
 ✅ Cleaning NIK otomatis (hapus karakter non-digit)
 ✅ Format tanggal menjadi dd-mm-yyyy (tanpa waktu)
 ✅ Header berwarna biru dengan teks putih
-✅ Info update tanggal dan jam
+✅ Info update di Sheet1 terpisah
 ✅ Validasi panjang NIK (16 digit)
 ✅ Konversi kolom pupuk ke numerik
 ✅ Reordering kolom untuk kebutuhan web
@@ -621,12 +758,15 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
         print(f"   📅 Tanggal Diformat: {len(tanggal_format_log):,}")
         
         # Tampilkan struktur sheet
-        print(f"\n📝 Struktur Sheet:")
-        print(f"   Baris 1: 'Data update per tanggal input :'")
-        print(f"   Baris 2: '{update_date_str}'")
-        print(f"   Baris 3: 'Jam update: {update_time_str}'")
-        print(f"   Baris 4: Header berwarna biru")
-        print(f"   Baris 5+: Data aktual ({len(combined_df):,} baris)")
+        print(f"\n📝 Struktur Sheets:")
+        print(f"   Sheet1 (Info):")
+        print(f"     - Header informasi")
+        print(f"     - Tanggal update: {update_date_str}")
+        print(f"     - Jam update: {update_time_str}")
+        print(f"     - Statistik dan info")
+        print(f"   Data_Gabungan (Data):")
+        print(f"     - Baris 1: Header berwarna biru")
+        print(f"     - Baris 2+: Data aktual ({len(combined_df):,} baris)")
         
         # Kirim email notifikasi sukses
         send_email_notification("CLEANING DATA WEB BERHASIL", success_message, is_success=True)
