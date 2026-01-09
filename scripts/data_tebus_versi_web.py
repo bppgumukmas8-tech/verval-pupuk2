@@ -90,6 +90,44 @@ def clean_nik(nik_value):
     return cleaned_nik if cleaned_nik else None
 
 # ============================
+# FUNGSI FORMAT TANGGAL
+# ============================
+def format_tanggal(tanggal_value):
+    """
+    Format tanggal menjadi dd-mm-yyyy
+    Menangani berbagai format input
+    """
+    if pd.isna(tanggal_value) or tanggal_value is None:
+        return ""
+    
+    try:
+        # Coba parse sebagai datetime pandas
+        if isinstance(tanggal_value, pd.Timestamp):
+            return tanggal_value.strftime('%d-%m-%Y')
+        
+        # Convert ke string
+        tanggal_str = str(tanggal_value).strip()
+        
+        # Jika kosong, return string kosong
+        if not tanggal_str:
+            return ""
+        
+        # Coba parse dengan berbagai format
+        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%y', '%d/%m/%y']:
+            try:
+                dt = datetime.strptime(tanggal_str, fmt)
+                return dt.strftime('%d-%m-%Y')
+            except ValueError:
+                continue
+        
+        # Jika tidak bisa di-parse, return as-is (tapi bersihkan whitespace)
+        return tanggal_str
+        
+    except Exception as e:
+        print(f"⚠️  Gagal format tanggal '{tanggal_value}': {e}")
+        return str(tanggal_value).strip()
+
+# ============================
 # FUNGSI KIRIM EMAIL
 # ============================
 def send_email_notification(subject, message, is_success=True):
@@ -220,6 +258,7 @@ def process_data_for_web():
         total_rows = 0
         file_count = 0
         nik_cleaning_log = []
+        tanggal_format_log = []
 
         print("🔍 Memulai proses cleaning dan reordering data...")
         
@@ -262,6 +301,22 @@ def process_data_for_web():
                 cleaned_niks = df[df['NIK_ORIGINAL'] != df['NIK']][['NIK_ORIGINAL', 'NIK']]
                 for _, row in cleaned_niks.iterrows():
                     nik_cleaning_log.append(f"'{row['NIK_ORIGINAL']}' -> {row['NIK']}")
+                
+                # PROSES FORMAT TANGGAL TEBUS
+                if 'TGL TEBUS' in df.columns:
+                    # Simpan nilai asli untuk logging
+                    df['TGL_TEBUS_ORIGINAL'] = df['TGL TEBUS']
+                    
+                    # Apply formatting function
+                    df['TGL TEBUS'] = df['TGL TEBUS'].apply(format_tanggal)
+                    
+                    # Log perubahan format tanggal
+                    for _, row in df[['TGL_TEBUS_ORIGINAL', 'TGL TEBUS']].iterrows():
+                        if str(row['TGL_TEBUS_ORIGINAL']).strip() != str(row['TGL TEBUS']).strip():
+                            tanggal_format_log.append(f"'{row['TGL_TEBUS_ORIGINAL']}' -> {row['TGL TEBUS']}")
+                
+                # Hapus kolom sementara
+                df = df.drop(columns=['NIK_ORIGINAL', 'TGL_TEBUS_ORIGINAL'], errors='ignore')
                 
                 # Hapus baris dengan NIK kosong setelah cleaning
                 df = df[df['NIK'].notna()]
@@ -366,6 +421,7 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 • Total Data: {total_rows:,} baris
 • Unique NIK: {combined_df['NIK'].nunique():,}
 • NIK Dibersihkan: {len(nik_cleaning_log):,} entri
+• Tanggal Diformat: {len(tanggal_format_log):,} entri
 
 🔄 PERUBAHAN URUTAN KOLOM:
 1. NIK (1) ← dari (4)
@@ -375,12 +431,22 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 5. NO TRANSAKSI (5) ← dari (2)
 6. UREA hingga STATUS (6-14) ← tetap
 
+📅 FORMAT TANGGAL:
+• Kolom 'TGL TEBUS' diformat menjadi: dd-mm-yyyy
+• Contoh: '2023-12-31 14:30:00' → '31-12-2023'
+• Contoh: '2023/12/31' → '31-12-2023'
+• Contoh: '31-12-23' → '31-12-2023'
+
 📋 DETAIL FILE:
 {chr(10).join(log)}
 
 🔍 CONTOH NIK YANG DIBERSIHKAN:
 {chr(10).join(nik_cleaning_log[:10])}
 {"... (masih ada yang lain)" if len(nik_cleaning_log) > 10 else ""}
+
+📅 CONTOH FORMAT TANGGAL:
+{chr(10).join(tanggal_format_log[:10])}
+{"... (masih ada yang lain)" if len(tanggal_format_log) > 10 else ""}
 
 ✅ Data telah berhasil diupload ke Google Sheets:
 • Spreadsheet: {SPREADSHEET_ID}
@@ -389,6 +455,7 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
 
 🎯 FITUR:
 ✅ Cleaning NIK otomatis (hapus karakter non-digit)
+✅ Format tanggal menjadi dd-mm-yyyy (tanpa waktu)
 ✅ Validasi panjang NIK (16 digit)
 ✅ Konversi kolom pupuk ke numerik
 ✅ Reordering kolom untuk kebutuhan web
@@ -403,6 +470,12 @@ CLEANING & REORDERING DATA UNTUK WEB BERHASIL ✓
         print(f"   📊 Baris: {total_rows:,}")
         print(f"   👥 Unique NIK: {combined_df['NIK'].nunique():,}")
         print(f"   🔧 NIK Dibersihkan: {len(nik_cleaning_log):,}")
+        print(f"   📅 Tanggal Diformat: {len(tanggal_format_log):,}")
+        
+        # Tampilkan contoh data
+        print(f"\n📋 Contoh 5 baris pertama (TGL TEBUS sudah diformat):")
+        for i, row in combined_df.head().iterrows():
+            print(f"   {i+1}. NIK: {row['NIK']}, NAMA: {row['NAMA PETANI']}, TGL: {row['TGL TEBUS']}")
         
         # Kirim email notifikasi sukses
         send_email_notification("CLEANING DATA WEB BERHASIL", success_message, is_success=True)
