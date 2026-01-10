@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-tebus_petani.py - VERSION WITH DEBUG
-SISTEM PEMANTAUAN PENEBUSAN PUPUK - DEBUG VERSION
+tebus_petani.py
+SISTEM PEMANTAUAN PENEBUSAN PUPUK
+FINAL VERSION + DEBUG LOGGING + EMAIL NOTIFICATION
 """
 
 import os
@@ -24,8 +25,12 @@ from googleapiclient.http import MediaIoBaseDownload
 # =====================================================
 ERDKK_FOLDER_ID = "13N5dLdHzAKff6g8RDRiHa7LFyZbdJUCJ"
 REALISASI_FOLDER_ID = "1AXQdEUW1dXRcdT0m0QkzvT7ZJjN0Vt4E"
+
 OUTPUT_SPREADSHEET_ID = "1BmaYGnBTAyW6JoI0NGweO0lDgNxiTwH-SiNXTrhRLnM"
-OUTPUT_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1BmaYGnBTAyW6JoI0NGweO0lDgNxiTwH-SiNXTrhRLnM/edit"
+OUTPUT_SPREADSHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1BmaYGnBTAyW6JoI0NGweO0lDgNxiTwH-SiNXTrhRLnM/edit"
+)
 
 SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
@@ -35,11 +40,11 @@ SCOPES = [
 ]
 
 # =====================================================
-# UTIL - TAMBAH LOGGING DETAIL
+# UTIL + DEBUG
 # =====================================================
 def log(msg, level="INFO"):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] [{level}] {msg}")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] [{level}] {msg}")
 
 def clean_nik(series):
     return series.astype(str).str.replace(r"\D", "", regex=True).str.strip()
@@ -52,24 +57,20 @@ def find_column(df, keywords):
                 return col
     return None
 
-def debug_dataframe(df, name):
-    """Debug function untuk melihat info dataframe"""
-    log(f"DataFrame: {name}", "DEBUG")
-    log(f"  Shape: {df.shape}", "DEBUG")
-    log(f"  Columns: {list(df.columns)}", "DEBUG")
-    if len(df) > 0:
-        log(f"  First NIK: {df['NIK'].iloc[0] if 'NIK' in df.columns else 'N/A'}", "DEBUG")
-        log(f"  Last NIK: {df['NIK'].iloc[-1] if 'NIK' in df.columns else 'N/A'}", "DEBUG")
-    if 'NIK' in df.columns:
-        log(f"  NIK count: {df['NIK'].count()}, NIK unique: {df['NIK'].nunique()}", "DEBUG")
+def debug_df(df, name):
+    log(f"DF {name} | shape={df.shape}", "DEBUG")
+    log(f"DF {name} | columns={list(df.columns)}", "DEBUG")
+    if "NIK" in df.columns:
+        log(
+            f"DF {name} | NIK count={df['NIK'].count()} "
+            f"unique={df['NIK'].nunique()}",
+            "DEBUG",
+        )
 
 # =====================================================
 # EMAIL
 # =====================================================
 def load_email_config():
-    """
-    Memuat konfigurasi email dari environment variables / secrets
-    """
     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
     SENDER_EMAIL_PASSWORD = os.getenv("SENDER_EMAIL_PASSWORD")
     RECIPIENT_EMAILS = os.getenv("RECIPIENT_EMAILS")
@@ -82,23 +83,19 @@ def load_email_config():
         raise ValueError("❌ SECRET RECIPIENT_EMAILS TIDAK TERBACA")
 
     try:
-        recipient_list = json.loads(RECIPIENT_EMAILS)
+        recipients = json.loads(RECIPIENT_EMAILS)
     except json.JSONDecodeError:
-        recipient_list = [e.strip() for e in RECIPIENT_EMAILS.split(",")]
+        recipients = [e.strip() for e in RECIPIENT_EMAILS.split(",")]
 
     return {
         "smtp_server": "smtp.gmail.com",
         "smtp_port": 587,
         "sender_email": SENDER_EMAIL,
         "sender_password": SENDER_EMAIL_PASSWORD,
-        "recipient_emails": recipient_list,
+        "recipient_emails": recipients,
     }
 
-def send_email_notification(
-    total_erdkk_nik,
-    total_realisasi_nik,
-    total_belum_nik
-):
+def send_email_notification(total_erdkk_nik, total_realisasi_nik, total_belum_nik):
     cfg = load_email_config()
 
     subject = "[LAPORAN] Pemantauan Penebusan Pupuk – PROSES BERHASIL"
@@ -106,15 +103,15 @@ def send_email_notification(
     body = f"""
 Proses pemantauan penebusan pupuk TELAH BERHASIL dijalankan.
 
-Ringkasan data:
-- Jumlah NIK unik ERDKK        : {total_erdkk_nik:,}
-- Jumlah NIK unik Realisasi   : {total_realisasi_nik:,}
-- Jumlah NIK belum menebus    : {total_belum_nik:,}
+Ringkasan:
+- NIK unik ERDKK      : {total_erdkk_nik:,}
+- NIK unik Realisasi : {total_realisasi_nik:,}
+- Belum menebus      : {total_belum_nik:,}
 
-Hasil lengkap dan detail dapat dilihat pada spreadsheet berikut:
+Detail lengkap:
 {OUTPUT_SPREADSHEET_URL}
 
-Pesan ini dikirim otomatis oleh sistem.
+Email ini dikirim otomatis oleh sistem.
 """
 
     msg = MIMEMultipart()
@@ -128,317 +125,249 @@ Pesan ini dikirim otomatis oleh sistem.
         server.login(cfg["sender_email"], cfg["sender_password"])
         server.send_message(msg)
 
-    log("📧 Notifikasi email berhasil dikirim", "INFO")
+    log("📧 Email notifikasi terkirim", "INFO")
 
 # =====================================================
 # GOOGLE AUTH
 # =====================================================
 def init_drive():
-    log("Menginisialisasi Google Drive API...", "DEBUG")
-    if not SERVICE_ACCOUNT_JSON:
-        raise ValueError("❌ SERVICE_ACCOUNT_JSON tidak ditemukan di environment variables")
-    
-    try:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(SERVICE_ACCOUNT_JSON), scopes=SCOPES
-        )
-        drive_service = build("drive", "v3", credentials=creds)
-        log("Google Drive API berhasil diinisialisasi", "DEBUG")
-        return drive_service
-    except Exception as e:
-        log(f"Gagal menginisialisasi Google Drive: {str(e)}", "ERROR")
-        raise
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(SERVICE_ACCOUNT_JSON), scopes=SCOPES
+    )
+    return build("drive", "v3", credentials=creds)
 
 def init_gspread():
-    log("Menginisialisasi Google Sheets API...", "DEBUG")
-    if not SERVICE_ACCOUNT_JSON:
-        raise ValueError("❌ SERVICE_ACCOUNT_JSON tidak ditemukan di environment variables")
-    
-    try:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(SERVICE_ACCOUNT_JSON), scopes=SCOPES
-        )
-        gc = gspread.authorize(creds)
-        log("Google Sheets API berhasil diinisialisasi", "DEBUG")
-        return gc
-    except Exception as e:
-        log(f"Gagal menginisialisasi Google Sheets: {str(e)}", "ERROR")
-        raise
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(SERVICE_ACCOUNT_JSON), scopes=SCOPES
+    )
+    return gspread.authorize(creds)
 
 # =====================================================
 # GOOGLE DRIVE
 # =====================================================
-def list_excel_files(drive, folder_id, folder_name=""):
-    """List semua file Excel di folder dengan debug info"""
-    try:
-        log(f"Mencari file Excel di folder {folder_name or folder_id}...", "DEBUG")
-        res = drive.files().list(
-            q=f"'{folder_id}' in parents and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
-            fields="files(id,name,createdTime,modifiedTime)",
-            orderBy="modifiedTime desc"
-        ).execute()
-        
-        files = res.get("files", [])
-        log(f"Ditemukan {len(files)} file Excel di folder {folder_name or folder_id}", "INFO")
-        
-        # Debug: print info file
-        for i, f in enumerate(files[:5]):  # Tampilkan 5 file terbaru
-            mod_time = datetime.strptime(f['modifiedTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
-            log(f"  {i+1}. {f['name']} (mod: {mod_time.strftime('%Y-%m-%d %H:%M')})", "DEBUG")
-        
-        if len(files) > 5:
-            log(f"  ... dan {len(files)-5} file lainnya", "DEBUG")
-            
-        return files
-    except Exception as e:
-        log(f"Error listing files di folder {folder_id}: {str(e)}", "ERROR")
-        raise
+def list_excel_files(drive, folder_id):
+    res = drive.files().list(
+        q=f"'{folder_id}' in parents "
+        f"and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
+        fields="files(id,name)",
+    ).execute()
+    return res.get("files", [])
 
-def download_excel(drive, file_id, file_name=""):
-    try:
-        log(f"Mengunduh file: {file_name or file_id}", "DEBUG")
-        request = drive.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        fh.seek(0)
-        log(f"File berhasil diunduh: {file_name or file_id}", "DEBUG")
-        return fh
-    except Exception as e:
-        log(f"Gagal mengunduh file {file_id}: {str(e)}", "ERROR")
-        raise
+def download_excel(drive, file_id):
+    request = drive.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    fh.seek(0)
+    return fh
 
 # =====================================================
 # LOAD DATA
 # =====================================================
 def load_erdkk(drive):
-    log("=== MEMUAT DATA ERDKK ===", "INFO")
     frames = []
-    
-    files = list_excel_files(drive, ERDKK_FOLDER_ID, "ERDKK")
-    
-    if not files:
-        log("⚠️ TIDAK ADA FILE di folder ERDKK!", "WARNING")
-        return pd.DataFrame()
-    
-    for i, f in enumerate(files, 1):
-        log(f"Memuat file ERDKK {i}/{len(files)}: {f['name']}", "INFO")
-        try:
-            df = pd.read_excel(download_excel(drive, f["id"], f["name"]), dtype=str)
-            log(f"  - Berhasil: {len(df)} baris, {len(df.columns)} kolom", "DEBUG")
-            frames.append(df)
-        except Exception as e:
-            log(f"  - Gagal memuat file {f['name']}: {str(e)}", "ERROR")
-    
-    if not frames:
-        log("❌ Tidak ada file ERDKK yang berhasil dimuat!", "ERROR")
-        return pd.DataFrame()
-    
+    for f in list_excel_files(drive, ERDKK_FOLDER_ID):
+        df = pd.read_excel(download_excel(drive, f["id"]), dtype=str)
+        frames.append(df)
+
     df = pd.concat(frames, ignore_index=True)
-    log(f"Total data ERDKK setelah concat: {len(df)} baris", "INFO")
-    
-    # Cari kolom NIK
+
     nik_col = find_column(df, ["KTP", "NIK"])
-    if not nik_col:
-        log("⚠️ Kolom NIK tidak ditemukan di data ERDKK!", "WARNING")
-        log(f"Kolom yang tersedia: {list(df.columns)}", "DEBUG")
-        # Coba kolom pertama yang mengandung angka (mungkin NIK)
-        for col in df.columns:
-            sample = df[col].astype(str).str.strip().iloc[0] if len(df) > 0 else ""
-            if sample.isdigit() and len(sample) >= 10:
-                nik_col = col
-                log(f"Menggunakan kolom {col} sebagai NIK (deteksi otomatis)", "INFO")
-                break
-    
-    if nik_col:
-        df.rename(columns={nik_col: "NIK"}, inplace=True)
-        df["NIK"] = clean_nik(df["NIK"])
-        log(f"Menggunakan kolom '{nik_col}' sebagai NIK", "INFO")
-    else:
-        log("❌ Tidak bisa menemukan kolom NIK!", "ERROR")
-        return pd.DataFrame()
-    
-    debug_dataframe(df, "ERDKK (setelah cleaning)")
-    
-    # Hapus NIK kosong
-    before = len(df)
-    df = df[df["NIK"].notna() & (df["NIK"].str.strip() != "")]
-    after = len(df)
-    log(f"Menghapus NIK kosong: {before} → {after} baris", "INFO")
-    
+    df.rename(columns={nik_col: "NIK"}, inplace=True)
+    df["NIK"] = clean_nik(df["NIK"])
+
+    debug_df(df, "ERDKK")
     return df
 
 def load_realisasi(drive):
-    log("=== MEMUAT DATA REALISASI ===", "INFO")
     frames, tgl_inputs = [], []
 
-    files = list_excel_files(drive, REALISASI_FOLDER_ID, "REALISASI")
-    
-    if not files:
-        log("⚠️ TIDAK ADA FILE di folder REALISASI!", "WARNING")
-        return pd.DataFrame(), None
-    
-    for i, f in enumerate(files, 1):
-        log(f"Memuat file Realisasi {i}/{len(files)}: {f['name']}", "INFO")
-        try:
-            df = pd.read_excel(download_excel(drive, f["id"], f["name"]), dtype=str)
-            log(f"  - Berhasil: {len(df)} baris, {len(df.columns)} kolom", "DEBUG")
-            
-            # Cari kolom TGL INPUT
-            if "TGL INPUT" in df.columns:
-                try:
-                    df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
-                    max_tgl = df["TGL INPUT"].max()
-                    if pd.notna(max_tgl):
-                        tgl_inputs.append(max_tgl)
-                        log(f"  - TGL INPUT terbaru: {max_tgl}", "DEBUG")
-                except Exception as e:
-                    log(f"  - Error parsing TGL INPUT: {str(e)}", "WARNING")
-            
-            # Cari kolom NIK
-            nik_col = find_column(df, ["KTP", "NIK"])
-            if nik_col:
-                df.rename(columns={nik_col: "NIK"}, inplace=True)
-                log(f"  - Menggunakan kolom '{nik_col}' sebagai NIK", "DEBUG")
-            elif "NIK" not in df.columns:
-                log("  - ⚠️ Kolom NIK tidak ditemukan di file ini", "WARNING")
-                continue
-            
-            frames.append(df)
-        except Exception as e:
-            log(f"  - Gagal memuat file {f['name']}: {str(e)}", "ERROR")
-    
-    if not frames:
-        log("❌ Tidak ada file Realisasi yang berhasil dimuat!", "ERROR")
-        return pd.DataFrame(), None
-    
+    for f in list_excel_files(drive, REALISASI_FOLDER_ID):
+        df = pd.read_excel(download_excel(drive, f["id"]), dtype=str)
+
+        if "TGL INPUT" in df.columns:
+            df["TGL INPUT"] = pd.to_datetime(df["TGL INPUT"], errors="coerce")
+            tgl_inputs.append(df["TGL INPUT"].max())
+
+        nik_col = find_column(df, ["KTP", "NIK"])
+        if nik_col:
+            df.rename(columns={nik_col: "NIK"}, inplace=True)
+
+        frames.append(df)
+
     df = pd.concat(frames, ignore_index=True)
-    
-    # Pastikan kolom NIK ada
-    if "NIK" not in df.columns:
-        log("❌ Kolom NIK tidak ditemukan di data Realisasi!", "ERROR")
-        return pd.DataFrame(), None
-    
     df["NIK"] = clean_nik(df["NIK"])
-    
-    # Hapus NIK kosong
-    before = len(df)
-    df = df[df["NIK"].notna() & (df["NIK"].str.strip() != "")]
-    after = len(df)
-    log(f"Menghapus NIK kosong: {before} → {after} baris", "INFO")
-    
-    debug_dataframe(df, "Realisasi (setelah cleaning)")
-    
-    # Cari tanggal input terbaru
-    latest = None
-    if tgl_inputs:
-        latest = max(tgl_inputs)
-        log(f"Tanggal input terbaru di Realisasi: {latest}", "INFO")
-    
+
+    debug_df(df, "REALISASI")
+
+    latest = max([t for t in tgl_inputs if pd.notna(t)])
     return df, latest
 
 # =====================================================
-# MAIN DENGAN DEBUGGING
+# MAIN
 # =====================================================
 def main():
-    log("=== SISTEM PEMANTAUAN PENEBUSAN PUPUK (DEBUG MODE) ===", "INFO")
-    
+    log("=== SISTEM PEMANTAUAN PENEBUSAN PUPUK ===", "INFO")
+
     try:
-        # 1. Inisialisasi
-        log("1. Inisialisasi Google Drive & Sheets...", "INFO")
         drive = init_drive()
         gc = init_gspread()
-        
-        # 2. Load data ERDKK
-        log("2. Memuat data ERDKK...", "INFO")
+
         erdkk = load_erdkk(drive)
-        if erdkk.empty:
-            log("❌ Data ERDKK KOSONG! Script dihentikan.", "ERROR")
-            return
-        
-        # 3. Load data Realisasi
-        log("3. Memuat data Realisasi...", "INFO")
         realisasi, latest_input = load_realisasi(drive)
-        if realisasi.empty:
-            log("⚠️ Data Realisasi KOSONG!", "WARNING")
-        
-        # 4. Identifikasi yang belum menebus
-        log("4. Mencari NIK yang belum menebus...", "INFO")
-        
-        # Ambil NIK unik dari realisasi
-        realisasi_nik = realisasi["NIK"].dropna().unique() if not realisasi.empty else []
-        realisasi_nik_set = set(realisasi_nik)
-        log(f"Jumlah NIK unik realisasi: {len(realisasi_nik_set)}", "INFO")
-        
-        # Filter NIK yang belum ada di realisasi
-        mask = ~erdkk["NIK"].isin(realisasi_nik_set)
-        belum = erdkk[mask].copy()
-        
-        log(f"Jumlah yang belum menebus: {len(belum)}", "INFO")
-        
-        if len(belum) == 0:
-            log("✅ SEMUA PETANI SUDAH MENEBUS!", "SUCCESS")
-        else:
-            log(f"⚠️ Masih ada {len(belum)} petani yang belum menebus", "WARNING")
-        
-        # 5. Hitung summary
+
+        belum = erdkk[~erdkk["NIK"].isin(set(realisasi["NIK"].dropna()))].copy()
+
+        kolom_desa = belum.columns[-1]
+        kolom_kecamatan = find_column(belum, ["GAPOKTAN"])
+
+        belum.rename(
+            columns={kolom_desa: "Desa", kolom_kecamatan: "Kecamatan"},
+            inplace=True,
+        )
+
+        # =========================
+        # STATISTIK
+        # =========================
+        total_erdkk_rows = len(erdkk)
         total_erdkk_nik = erdkk["NIK"].nunique()
-        total_realisasi_nik = len(realisasi_nik_set)
-        total_belum_nik = belum["NIK"].nunique() if not belum.empty else 0
-        
-        log("=" * 50, "INFO")
-        log("SUMMARY DATA:", "INFO")
-        log(f"- Jumlah NIK unik ERDKK        : {total_erdkk_nik:,}", "INFO")
-        log(f"- Jumlah NIK unik Realisasi   : {total_realisasi_nik:,}", "INFO")
-        log(f"- Jumlah NIK belum menebus    : {total_belum_nik:,}", "INFO")
-        log("=" * 50, "INFO")
-        
-        # 6. Kirim email
-        log("5. Mengirim notifikasi email...", "INFO")
+        total_realisasi_rows = len(realisasi)
+        total_realisasi_nik = realisasi["NIK"].nunique()
+        total_belum_nik = belum["NIK"].nunique()
+
+        # =========================
+        # SPREADSHEET
+        # =========================
+        sh = gc.open_by_key(OUTPUT_SPREADSHEET_ID)
+
         try:
-            send_email_notification(
-                total_erdkk_nik,
-                total_realisasi_nik,
-                total_belum_nik
+            ws_info = sh.worksheet("Sheet1")
+        except gspread.WorksheetNotFound:
+            ws_info = sh.add_worksheet("Sheet1", 100, 20)
+
+        for ws in sh.worksheets():
+            if ws.title != "Sheet1":
+                sh.del_worksheet(ws)
+
+        ws_info.clear()
+        ws_info.update(
+            "A1:B9",
+            [
+                ["Update Tanggal", latest_input.strftime("%d %B %Y")],
+                ["Update Jam", latest_input.strftime("%H:%M:%S")],
+                ["", ""],
+                ["Jumlah baris ERDKK", total_erdkk_rows],
+                ["Jumlah NIK unik ERDKK", total_erdkk_nik],
+                ["Jumlah baris Realisasi", total_realisasi_rows],
+                ["Jumlah NIK unik Realisasi", total_realisasi_nik],
+                ["Jumlah petani belum tebus", total_belum_nik],
+            ],
+        )
+
+        # =========================
+        # DATA BELUM TEBUS
+        # =========================
+        data_petani = belum[
+            [
+                "Kecamatan",
+                "Desa",
+                "Nama Petani",
+                "NIK",
+                "Kode Kios Pengecer",
+                "Nama Kios Pengecer",
+            ]
+        ]
+
+        ws_data = sh.add_worksheet(
+            "Data Petani Belum Tebus",
+            min(len(data_petani) + 10, 1_000_000),
+            len(data_petani.columns),
+        )
+
+        ws_data.update("A1", [data_petani.columns.tolist()])
+        for i in range(0, len(data_petani), 10000):
+            ws_data.update(
+                f"A{i+2}",
+                data_petani.iloc[i : i + 10000]
+                .fillna("")
+                .astype(str)
+                .values.tolist(),
             )
-        except Exception as email_error:
-            log(f"⚠️ Gagal mengirim email: {str(email_error)}", "WARNING")
-        
-        log("✅ PROSES SELESAI", "SUCCESS")
-        
+
+        # =========================
+        # PIVOT KEC
+        # =========================
+        pivot_kec = (
+            data_petani.groupby("Kecamatan")["NIK"]
+            .nunique()
+            .reset_index(name="Jumlah Petani")
+        )
+        pivot_kec.loc[len(pivot_kec)] = ["TOTAL", total_belum_nik]
+
+        ws_kec = sh.add_worksheet("pivot_kec", len(pivot_kec) + 5, 2)
+        ws_kec.update("A1", [["Kecamatan", "Jumlah Petani"]] + pivot_kec.values.tolist())
+
+        # =========================
+        # PIVOT DESA
+        # =========================
+        pivot_desa = (
+            data_petani.groupby(["Kecamatan", "Desa"])["NIK"]
+            .nunique()
+            .reset_index(name="Jumlah Petani")
+        )
+        pivot_desa.loc[len(pivot_desa)] = ["TOTAL", "", total_belum_nik]
+
+        ws_desa = sh.add_worksheet("pivot_desa", len(pivot_desa) + 5, 3)
+        ws_desa.update(
+            "A1",
+            [["Kecamatan", "Desa", "Jumlah Petani"]] + pivot_desa.values.tolist(),
+        )
+
+        # =========================
+        # PIVOT KIOS
+        # =========================
+        pivot_kios = (
+            data_petani.groupby(
+                [
+                    "Kecamatan",
+                    "Desa",
+                    "Kode Kios Pengecer",
+                    "Nama Kios Pengecer",
+                ]
+            )["NIK"]
+            .nunique()
+            .reset_index(name="Jumlah Petani")
+        )
+        pivot_kios.loc[len(pivot_kios)] = ["TOTAL", "", "", "", total_belum_nik]
+
+        ws_kios = sh.add_worksheet("pivot_kios", len(pivot_kios) + 5, 5)
+        ws_kios.update(
+            "A1",
+            [
+                [
+                    "Kecamatan",
+                    "Desa",
+                    "Kode Kios",
+                    "Nama Kios",
+                    "Jumlah Petani",
+                ]
+            ]
+            + pivot_kios.values.tolist(),
+        )
+
+        send_email_notification(
+            total_erdkk_nik,
+            total_realisasi_nik,
+            total_belum_nik,
+        )
+
+        log("✔ SEMUA PROSES SELESAI", "SUCCESS")
+
     except Exception as e:
-        error_msg = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
-        log(f"❌ ERROR: {error_msg}", "ERROR")
-        
-        # Kirim email error
-        try:
-            cfg = load_email_config()
-            subject = "[ERROR CRITICAL] Sistem Pemantauan Pupuk GAGAL"
-            body = f"""
-SYSTEM ERROR - Proses pemantauan penebusan pupuk GAGAL!
-
-Error Time: {datetime.now()}
-Error Details:
-{error_msg}
-
-Harap segera periksa server!
-"""
-            msg = MIMEMultipart()
-            msg["From"] = cfg["sender_email"]
-            msg["To"] = ", ".join(cfg["recipient_emails"])
-            msg["Subject"] = subject
-            msg.attach(MIMEText(body, "plain"))
-
-            with smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"]) as server:
-                server.starttls()
-                server.login(cfg["sender_email"], cfg["sender_password"])
-                server.send_message(msg)
-            log("📧 Email error terkirim", "INFO")
-        except Exception as email_error:
-            log(f"Gagal kirim email error: {email_error}", "ERROR")
-        
+        log(str(e), "ERROR")
+        log(traceback.format_exc(), "ERROR")
         raise
 
 if __name__ == "__main__":
