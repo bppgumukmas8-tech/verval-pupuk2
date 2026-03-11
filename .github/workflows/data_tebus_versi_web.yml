@@ -1,5 +1,5 @@
 name: Data Tebus Versi Web Otomatis
-
+# update
 on:
   schedule:
     # Jam 16:30 UTC = 23:30 WIB (setelah script data tebus pubers)
