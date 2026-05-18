@@ -433,12 +433,11 @@ def download_excel_files(folder_id, save_folder=SAVE_FOLDER):
     return paths
 
 # ============================
-# FUNGSI UNTUK MENULIS DATA KE GOOGLE SHEETS (TANPA LIMIT 200K BARIS)
+# FUNGSI UNTUK MENULIS DATA KE GOOGLE SHEETS (DIPERBAIKI)
 # ============================
 def write_to_google_sheet(worksheet, data_rows):
     """
-    Menulis data ke Google Sheets TANPA limit 200,000 baris
-    Hanya batasan 10 juta cells total per spreadsheet
+    Menulis data ke Google Sheets dengan resize worksheet terlebih dahulu
     """
     try:
         print(f"📤 Menulis {len(data_rows)} baris data ke Google Sheets...")
@@ -449,62 +448,50 @@ def write_to_google_sheet(worksheet, data_rows):
         print(f"📊 Ukuran data: {total_rows_to_write} baris x {total_columns} kolom")
         print(f"💾 Total cells: {total_rows_to_write * total_columns:,}")
         
+        # ========== RESIZE WORKSHEET TERLEBIH DAHULU ==========
+        # Cek ukuran worksheet saat ini
+        current_rows = worksheet.row_count
+        current_cols = worksheet.col_count
+        
+        print(f"📏 Ukuran worksheet saat ini: {current_rows} baris x {current_cols} kolom")
+        
+        # Hitung ukuran yang dibutuhkan (beri buffer 100 baris untuk safety)
+        needed_rows = total_rows_to_write + 100
+        needed_cols = total_columns + 5
+        
+        # Resize jika perlu
+        if needed_rows > current_rows or needed_cols > current_cols:
+            print(f"🔄 Meresize worksheet menjadi {needed_rows} baris x {needed_cols} kolom...")
+            try:
+                worksheet.resize(rows=needed_rows, cols=needed_cols)
+                print(f"✅ Resize berhasil")
+                
+                # Verifikasi resize
+                new_rows = worksheet.row_count
+                new_cols = worksheet.col_count
+                print(f"📏 Ukuran setelah resize: {new_rows} baris x {new_cols} kolom")
+                
+                if new_rows < total_rows_to_write:
+                    print(f"⚠️  Peringatan: Worksheet hanya bisa diresize hingga {new_rows} baris")
+                    if new_rows < total_rows_to_write:
+                        raise ValueError(f"Worksheet tidak bisa menampung {total_rows_to_write} baris. Maksimum: {new_rows} baris")
+                        
+            except Exception as resize_error:
+                error_msg = str(resize_error)
+                print(f"❌ Gagal resize: {error_msg}")
+                raise
+        else:
+            print(f"✅ Ukuran worksheet sudah mencukupi")
+        
         # 1. CLEAR SEMUA DATA DI WORKSHEET TERLEBIH DAHULU
         print("🧹 Membersihkan SEMUA data lama di worksheet...")
         try:
-            # Clear seluruh worksheet untuk mengosongkan cells
             worksheet.clear()
             print("✅ Worksheet berhasil dibersihkan")
         except Exception as clear_error:
             print(f"⚠️  Gagal clear worksheet: {str(clear_error)}")
-            # Tetap lanjut, mungkin sudah kosong
         
-        # 2. RESIZE WORKSHEET JIKA PERLU UNTUK DATA YANG BESAR
-        current_rows = worksheet.row_count
-        current_cols = worksheet.col_count
-        
-        # Hitung cells saat ini
-        current_cells = current_rows * current_cols
-        required_cells = total_rows_to_write * total_columns
-        
-        print(f"📊 Cells saat ini: {current_cells:,}")
-        print(f"📊 Cells diperlukan: {required_cells:,}")
-        
-        # Resize jika cells tidak cukup (tidak ada limit 200k baris)
-        if required_cells > current_cells:
-            print(f"🔄 Resize worksheet untuk menampung data besar...")
-            
-            # Hitung ukuran baru (beri buffer 20%)
-            new_rows = max(total_rows_to_write + 1000, int(total_rows_to_write * 1.2))
-            new_cols = max(total_columns + 10, int(total_columns * 1.2))
-            
-            # Hitung cells baru
-            new_cells = new_rows * new_cols
-            print(f"📏 Ukuran baru: {new_rows} baris x {new_cols} kolom = {new_cells:,} cells")
-            
-            # Cek apakah masih dalam batas 10 juta cells
-            if new_cells > 10000000:
-                print("⚠️  PERINGATAN: Ukuran worksheet mendekati limit 10 juta cells")
-                # Tetap resize, biarkan Google Sheets yang menolak jika benar-benar melebihi
-                
-            try:
-                worksheet.resize(rows=new_rows, cols=new_cols)
-                print(f"✅ Worksheet di-resize menjadi {new_rows} baris x {new_cols} kolom")
-            except Exception as resize_error:
-                error_msg = str(resize_error)
-                if "exceeds grid limits" in error_msg or "10000000" in error_msg:
-                    print("❌ Gagal resize: Mencapai limit 10 juta cells per spreadsheet")
-                    print("💡 Coba dengan ukuran yang lebih kecil...")
-                    # Coba resize dengan ukuran yang pas tanpa buffer
-                    try:
-                        worksheet.resize(rows=total_rows_to_write + 100, cols=total_columns + 5)
-                        print(f"✅ Worksheet di-resize menjadi {total_rows_to_write + 100} baris x {total_columns + 5} kolom")
-                    except:
-                        print("⚠️  Gagal resize ulang, melanjutkan dengan ukuran saat ini")
-                else:
-                    print(f"⚠️  Gagal resize worksheet: {str(resize_error)}")
-        
-        # 3. TULIS DATA DENGAN CHUNKING UNTUK DATA BESAR
+        # 2. TULIS DATA DENGAN CHUNKING UNTUK DATA BESAR
         CHUNK_SIZE = 10000  # 10,000 baris per chunk
         chunk_count = (total_rows_to_write + CHUNK_SIZE - 1) // CHUNK_SIZE
         
@@ -516,6 +503,10 @@ def write_to_google_sheet(worksheet, data_rows):
             
             current_chunk = data_rows[start_row:end_row]
             start_cell = f'A{start_row + 1}'
+            
+            # Validasi baris tidak melebihi batas
+            if end_row > worksheet.row_count:
+                raise ValueError(f"Baris {end_row} melebihi batas worksheet ({worksheet.row_count})")
             
             print(f"   📄 Menulis chunk {chunk_index + 1}/{chunk_count}: baris {start_row + 1}-{end_row}...")
             
@@ -625,7 +616,7 @@ def send_email_notification(subject, message, is_success=True):
         return False
 
 # ============================
-# PROSES UTAMA
+# PROSES UTAMA (DIPERBAIKI)
 # ============================
 def main():
     try:
@@ -754,19 +745,73 @@ def main():
             ws = sh.worksheet(SHEET_NAME)
             print(f"✅ Sheet '{SHEET_NAME}' ditemukan")
             
+            # ========== PERBAIKAN: Cek dan resize worksheet yang sudah ada ==========
+            current_rows = ws.row_count
+            current_cols = ws.col_count
+            needed_rows = len(hasil_pivot) + 100  # Buffer 100 baris
+            needed_cols = len(hasil_pivot[0]) + 10  # Buffer 10 kolom
+            
+            print(f"📏 Sheet saat ini: {current_rows} baris x {current_cols} kolom")
+            print(f"📏 Data membutuhkan: {len(hasil_pivot)} baris x {len(hasil_pivot[0])} kolom")
+            
+            if current_rows < needed_rows or current_cols < needed_cols:
+                print(f"🔄 Meresize sheet menjadi minimal {needed_rows} baris x {needed_cols} kolom...")
+                try:
+                    # Resize ke ukuran yang dibutuhkan
+                    ws.resize(rows=needed_rows, cols=needed_cols)
+                    print(f"✅ Resize berhasil")
+                    
+                    # Verifikasi
+                    new_rows = ws.row_count
+                    new_cols = ws.col_count
+                    print(f"📏 Setelah resize: {new_rows} baris x {new_cols} kolom")
+                    
+                    if new_rows < len(hasil_pivot):
+                        raise ValueError(f"Sheet hanya bisa diresize hingga {new_rows} baris, tetapi data membutuhkan {len(hasil_pivot)} baris")
+                        
+                except Exception as resize_error:
+                    error_msg = str(resize_error)
+                    print(f"⚠️  Gagal resize sheet yang ada: {error_msg}")
+                    print("🔄 Membuat sheet baru sebagai gantinya...")
+                    
+                    # Backup sheet lama dengan rename
+                    old_title = f"{SHEET_NAME}_old_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    try:
+                        sh.duplicate_worksheet(ws.id, new_sheet_name=old_title)
+                        print(f"✅ Sheet lama disimpan sebagai '{old_title}'")
+                    except:
+                        print(f"⚠️  Gagal backup sheet lama")
+                    
+                    # Buat worksheet baru dengan ukuran yang cukup
+                    # Maksimum rows Google Sheets adalah 1,048,576
+                    max_rows = 1048576
+                    new_rows = min(len(hasil_pivot) + 1000, max_rows)
+                    new_cols = len(hasil_pivot[0]) + 50
+                    
+                    ws = sh.add_worksheet(
+                        title=SHEET_NAME, 
+                        rows=new_rows, 
+                        cols=new_cols
+                    )
+                    print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat ({new_rows} baris x {new_cols} kolom)")
+            else:
+                print(f"✅ Ukuran sheet sudah mencukupi")
+            
         except gspread.exceptions.WorksheetNotFound:
             print(f"⚠️  Sheet '{SHEET_NAME}' tidak ditemukan, membuat baru...")
             
             # Hitung ukuran yang dibutuhkan untuk data besar
-            required_rows = max(1000, len(hasil_pivot) + 1000)  # Buffer lebih besar
-            required_cols = max(26, len(hasil_pivot[0]) + 10)   # Buffer lebih besar
+            # Maksimum rows Google Sheets adalah 1,048,576
+            max_rows = 1048576
+            needed_rows = min(len(hasil_pivot) + 1000, max_rows)
+            needed_cols = len(hasil_pivot[0]) + 50
             
             ws = sh.add_worksheet(
                 title=SHEET_NAME, 
-                rows=required_rows, 
-                cols=required_cols
+                rows=needed_rows, 
+                cols=needed_cols
             )
-            print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat ({required_rows} baris x {required_cols} kolom)")
+            print(f"✅ Sheet '{SHEET_NAME}' berhasil dibuat ({needed_rows} baris x {needed_cols} kolom)")
         except Exception as e:
             raise ValueError(f"❌ Gagal mengakses worksheet: {str(e)}")
         
