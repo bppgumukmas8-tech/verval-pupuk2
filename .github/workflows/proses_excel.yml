@@ -3,7 +3,7 @@ name: Proses Excel Verval Pupuk
 on:
   schedule:
     # Jalankan setiap hari jam 22:00 WIB (15:00 UTC)
-    - cron: "0 15 * * *"
+    - cron: "8 15 * * *"
   workflow_dispatch:  # Untuk manual run
 
 jobs:
