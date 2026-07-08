@@ -1,9 +1,10 @@
 name: Proses Excel Verval Pupuk
 # update
+# schedule dinonaktif karna sudah berjalan di cron.job
 on:
-  schedule:
+  # schedule:
     # Jalankan setiap hari jam 22:00 WIB (15:00 UTC)
-    - cron: "8 15 * * *"
+   # - cron: "8 15 * * *"
   workflow_dispatch:  # Untuk manual run
 
 jobs:
