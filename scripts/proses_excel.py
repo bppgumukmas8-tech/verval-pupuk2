@@ -317,6 +317,31 @@ def process_excel(file_id, file_name):
 # ----------------------------------------------------
 
 def main():
+    # ===== TAMBAHKAN INI DI SINI =====
+    add_log("🔍 MENGECEK KUOTA SERVICE ACCOUNT...")
+    free_space = check_service_account_quota()
+    
+    if free_space is not None:
+        if free_space < 0.5:  # < 500 MB
+            add_log("⚠️ PERINGATAN: Kuota tersisa < 500 MB!", is_error=True)
+            add_log("💡 Saran: Jalankan fungsi cleanup atau hapus file manual")
+            
+            # Tampilkan file besar
+            list_large_files()
+            
+            # Tawarkan cleanup
+            add_log("🔄 Menjalankan cleanup otomatis...")
+            clean_old_archives()
+            
+            # Cek ulang setelah cleanup
+            add_log("🔍 Cek ulang kuota setelah cleanup...")
+            free_space = check_service_account_quota()
+        elif free_space < 2:  # < 2 GB
+            add_log("⚠️ Kuota tersisa < 2 GB, pertimbangkan cleanup")
+            list_large_files()
+        else:
+            add_log(f"✅ Kuota mencukupi ({free_space:.2f} GB tersisa)")
+    # ===== SAMPAI SINI =====
     files = list_files_in_folder(FOLDER_ID)
     if not files:
         add_log("Tidak ada file Excel.")
