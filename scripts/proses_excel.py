@@ -59,6 +59,91 @@ def initialize_drive():
 
 drive = initialize_drive()
 
+# ===== TAMBAHKAN INI DI SINI (BARU) =====
+def check_service_account_quota():
+    """Cek kuota Service Account"""
+    try:
+        about = drive.about().get(fields="storageQuota, user").execute()
+        quota = about.get("storageQuota", {})
+        user = about.get("user", {})
+        
+        limit = int(quota.get("limit", 0))
+        usage = int(quota.get("usage", 0))
+        usage_drive = int(quota.get("usageInDrive", 0))
+        usage_trash = int(quota.get("usageInTrash", 0))
+        
+        limit_gb = limit / (1024 ** 3)
+        usage_gb = usage / (1024 ** 3)
+        free_gb = limit_gb - usage_gb
+        trash_gb = usage_trash / (1024 ** 3)
+        
+        add_log("📊 **KUOTA SERVICE ACCOUNT**")
+        add_log(f"  - Email: {user.get('emailAddress', 'N/A')}")
+        add_log(f"  - Total: {limit_gb:.2f} GB")
+        add_log(f"  - Terpakai: {usage_gb:.2f} GB")
+        add_log(f"  - Sisa: {free_gb:.2f} GB")
+        add_log(f"  - Sampah: {trash_gb:.2f} GB")
+        add_log(f"  - Persentase: {(usage/limit)*100:.1f}%" if limit > 0 else "  - Persentase: N/A")
+        
+        return free_gb
+    except Exception as e:
+        add_log(f"❌ Gagal cek kuota: {e}", is_error=True)
+        return None
+
+def list_large_files():
+    """Lihat file-file besar yang memakan kuota"""
+    try:
+        files = drive.files().list(
+            q="trashed=false",
+            fields="files(id, name, size, mimeType)",
+            orderBy="size desc",
+            pageSize=20
+        ).execute().get("files", [])
+        
+        add_log("📊 **20 FILE TERBESAR**")
+        total_size = 0
+        for i, f in enumerate(files, 1):
+            size_mb = int(f.get("size", 0)) / (1024 * 1024)
+            total_size += size_mb
+            add_log(f"  {i}. {f['name']} - {size_mb:.2f} MB")
+        
+        add_log(f"  Total 20 file teratas: {total_size/1024:.2f} GB")
+        return files
+    except Exception as e:
+        add_log(f"❌ Gagal list file besar: {e}", is_error=True)
+        return None
+
+def clean_old_archives():
+    """Hapus file arsip yang lebih dari 30 hari"""
+    from datetime import datetime, timedelta
+    
+    thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat() + 'Z'
+    
+    try:
+        files = drive.files().list(
+            q=f"'{ARCHIVE_FOLDER_ID}' in parents and modifiedTime < '{thirty_days_ago}'",
+            fields="files(id, name, modifiedTime)"
+        ).execute().get("files", [])
+        
+        if files:
+            add_log(f"🗑 Menemukan {len(files)} file arsip > 30 hari")
+            for f in files:
+                try:
+                    drive.files().delete(fileId=f["id"]).execute()
+                    add_log(f"  - Hapus: {f['name']}")
+                except:
+                    pass
+            
+            # Kosongkan trash
+            drive.files().emptyTrash().execute()
+            add_log("🗑 Trash dikosongkan")
+        else:
+            add_log("ℹ Tidak ada file arsip > 30 hari")
+            
+    except Exception as e:
+        add_log(f"❌ Gagal membersihkan arsip: {e}", is_error=True)
+# ===== SAMPAI SINI =====
+
 # ----------------------------------------------------
 # DRIVE UTIL (TETAP)
 # ----------------------------------------------------
