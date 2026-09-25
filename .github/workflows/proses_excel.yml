@@ -1,5 +1,5 @@
 name: Proses Excel Verval Pupuk
-# update
+# update 25 September
 # schedule dinonaktif karna sudah berjalan di cron.job
 on:
   # schedule:
