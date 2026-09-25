@@ -1,5 +1,7 @@
 name: ERDKK WA Center Otomatis
 
+# update1
+
 on:
   schedule:
     # Jalankan tiap tanggal 1 pukul 23:00 WIB (16:00 UTC)
