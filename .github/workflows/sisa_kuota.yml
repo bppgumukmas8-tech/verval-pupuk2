@@ -1,5 +1,5 @@
 name: 🧮 Sisa Kuota Pupuk
-# update
+# update 25 September 2026
 on:
   workflow_dispatch:
   schedule:
