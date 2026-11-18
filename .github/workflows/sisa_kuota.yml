@@ -7,16 +7,17 @@ on:
 
 jobs:
   calculate:
-    runs-on: ubuntu-latest
-    
+    # 👇 UBAH BARIS INI 👇
+    runs-on: ubuntu-24.04 
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Setup Python 3.9
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-    
+
     - name: Install dependencies
       run: |
         pip install --upgrade pip
